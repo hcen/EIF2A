@@ -1,0 +1,461 @@
+---
+title: "EIF2A_pathways"
+author: "Howard Cen"
+date: "2023-10-12"
+output: html_document
+---
+
+```{r libraries}
+
+
+library(tidyverse) # for data wrangling and more
+
+#BiocManager::install("clusterProfiler")
+library("clusterProfiler")
+#BiocManager::install("ReactomePA")
+library("ReactomePA")
+#install.packages("msigdbr")
+library(msigdbr) # load MSigDB gene sets, v7.5.1 (released January 2022) 
+
+
+#install.packages("openxlsx")
+library(openxlsx)
+
+#install.packages("readxl")
+library(readxl)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) ##Set working directory
+
+#dir.create("input")
+#dir.create("output")
+#dir.create("figures")
+
+```
+
+
+```{r GSEA function}
+library(tidyverse)
+library(msigdbr) # load MSigDB gene sets, v7.5.1 (released January 2022)
+library("clusterProfiler")
+library("ReactomePA")
+#install.packages("openxlsx")
+library(openxlsx)
+library(org.Hs.eg.db)
+gsea_human <- function(df,FC_col, p_col, name){ 
+  
+  #df = pro.de
+  #FC_col = "logFC"
+  #p_col = "p"
+  #name = "proteomics_T2D"
+  
+  # remove duplicated entrez
+  
+  df <- df[order(df[[p_col]]),]
+  df <- df[!duplicated(df$entrez),]
+  df <- df[!is.na(df$entrez), ]
+
+  # option1 rank by log2FC value
+  #genelist <- df$log2FoldChange
+  
+  # option2 rank by signed -log10 p value
+  genelist <- sign(df[[FC_col]]) * (-log10(df[[p_col]]))
+  
+  # option3 rank by log2FC*(-log10 p value)
+  #genelist <- (df$log2FoldChange) * (-log10(df$pvalue))
+  
+  # entrez id as names of the gene list
+  names(genelist) <- df$entrez
+  genelist = sort(genelist, decreasing = TRUE)
+  genelist[genelist==Inf] <- 23
+  genelist <- na.omit(genelist)
+  
+  head(genelist)
+  
+  gse.kegg <- gseKEGG(
+    geneList=genelist,
+    organism = "hsa",
+    minGSSize = 15, 
+    maxGSSize = 500,
+    pvalueCutoff = 1,
+    keyType = "kegg"
+  )
+  gse.kegg <- setReadable(gse.kegg, OrgDb = org.Hs.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+  gse.kegg.df <- as.data.frame(gse.kegg)
+
+  gseReactome <- gsePathway(
+    geneList=genelist,
+    organism = "human",
+    minGSSize = 15, 
+    maxGSSize = 500,
+    pvalueCutoff = 1,
+    verbose = TRUE)
+  gseReactome <- setReadable(gseReactome, OrgDb = org.Hs.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+  gseReactome.df <- as.data.frame(gseReactome)
+  
+  gseGO.bp <- gseGO(
+    geneList=genelist,
+    ont = "BP",
+    OrgDb = org.Hs.eg.db,
+    minGSSize = 15, 
+    maxGSSize = 500,
+    pvalueCutoff = 1,
+    verbose = TRUE,
+    keyType = "ENTREZID"
+  )
+  gseGO.bp <- setReadable(gseGO.bp, OrgDb = org.Hs.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+  gseGO.bp.df <- as.data.frame(gseGO.bp)
+ 
+  gseGO.mf <- gseGO(
+    geneList=genelist,
+    ont = "MF",
+    OrgDb = org.Hs.eg.db,
+    minGSSize = 15, 
+    maxGSSize = 500,
+    pvalueCutoff = 1,
+    verbose = TRUE,
+    keyType = "ENTREZID"
+  )
+  gseGO.mf <- setReadable(gseGO.mf, OrgDb = org.Hs.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+  gseGO.mf.df <- as.data.frame(gseGO.mf)
+
+  gseGO.cc <- gseGO(
+    geneList=genelist,
+    ont = "CC",
+    OrgDb = org.Hs.eg.db,
+    minGSSize = 15, 
+    maxGSSize = 500,
+    pvalueCutoff = 1,
+    verbose = TRUE,
+    keyType = "ENTREZID"
+  )
+  gseGO.cc <- setReadable(gseGO.cc, OrgDb = org.Hs.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+  gseGO.cc.df <- as.data.frame(gseGO.cc)
+
+
+#  gse.mkegg <- gseMKEGG(
+#    geneList=genelist,
+#    organism = "hsa",
+#    minGSSize = 15, 
+#    maxGSSize = 500,
+#    pvalueCutoff = 1,
+#    keyType = "kegg"
+#  )
+#  gse.mkegg <- setReadable(gse.mkegg, OrgDb = org.Hs.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+#  gse.mkegg.df <- as.data.frame(gse.mkegg)
+
+  
+#  gse.wp <- gseWP(geneList = genelist, organism = "Homo sapiens",
+#                  minGSSize = 15, 
+#                  maxGSSize = 500,
+#                  pvalueCutoff = 1)
+#  gse.wp <- setReadable(gse.wp, OrgDb = org.Hs.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+#  gse.wp.df <- as.data.frame(gse.wp)
+
+
+  # mSigDB Hallmark gene sets  
+  #msigdbr_show_species()
+  #m_df <- msigdbr(species = "Mus musculus")
+  #head(m_df, 2) %>% as.data.frame
+  
+  # H: hallmark gene sets
+  # C1: positional gene sets
+  # C2: curated gene sets
+  # C3: motif gene sets
+  # C4: computational gene sets
+  # C5: GO gene sets
+  # C6: oncogenic signatures
+  # C7: immunologic signatures
+  
+  # MSigDb GSEA
+  
+  #msigdbr_show_species()
+  h_t2g.h <- msigdbr(species = "Homo sapiens", category = "H") %>% 
+    dplyr::select(gs_name, entrez_gene)
+  head(h_t2g.h)
+  
+  gse.hallmark <- GSEA(geneList = genelist,
+                          minGSSize = 15, 
+                          maxGSSize = 500,
+                          eps = 1e-20,
+                          pvalueCutoff = 1,
+                          pAdjustMethod = "BH",
+                          TERM2GENE = h_t2g.h)
+  
+  gse.hallmark <- setReadable(gse.hallmark, OrgDb = org.Hs.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+  
+  gse.hallmark.df <- as.data.frame(gse.hallmark)
+  
+  #
+  
+  h_t2g.c8 <- msigdbr(species = "Homo sapiens", category = "C8") %>% 
+    dplyr::select(gs_name, entrez_gene)
+  head(h_t2g.c8)
+  
+  gse.c8 <- GSEA(geneList = genelist,
+                          minGSSize = 15, 
+                          maxGSSize = 500,
+                          eps = 1e-20,
+                          pvalueCutoff = 1,
+                          pAdjustMethod = "BH",
+                          TERM2GENE = h_t2g.c8)
+  
+  gse.c8 <- setReadable(gse.c8, OrgDb = org.Hs.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+  
+  gse.c8.df <- as.data.frame(gse.c8)
+  
+  
+  # Add the data frames to separate sheets
+  wb <- createWorkbook()
+    
+  addWorksheet(wb, "MSigDB_Hallmark")
+  writeData(wb, "MSigDB_Hallmark", gse.hallmark.df)
+  
+  addWorksheet(wb, "KEGG")
+  writeData(wb, "KEGG", gse.kegg.df)
+  
+  addWorksheet(wb, "Reactome")
+  writeData(wb, "Reactome", gseReactome.df)
+  
+  addWorksheet(wb, "GO_BP")
+  writeData(wb, "GO_BP", gseGO.bp.df)
+  
+  addWorksheet(wb, "GO_MF")
+  writeData(wb, "GO_MF", gseGO.mf.df)
+  
+  addWorksheet(wb, "GO_CC")
+  writeData(wb, "GO_CC", gseGO.cc.df)
+  
+  addWorksheet(wb, "MSigDB_C8_celltype")
+  writeData(wb, "MSigDB_C8_celltype", gse.c8.df)
+
+
+# Save the workbook to a file
+  fpath <- paste0("output/GSEA_p_", name, ".xlsx")
+  saveWorkbook(wb, fpath, overwrite = TRUE)
+  
+  cat(paste0("GSEA results saved in - ", fpath))
+  
+}
+
+```
+
+
+```{r GSEA proteomics}
+
+dmso.e_dmso.c <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 1)
+tg.e_tg.c <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 2)
+tg.c_dmso.c <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 3)
+tg.e_dmso.e <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 4)
+
+View(tg.e_dmso.e)
+
+group_levels = c("DMSO.ctrl", "DMSO.EIF2A", "Tg.ctrl", "Tg.EIF2A")
+
+vs <- c(paste0(group_levels[2],"_",group_levels[1]),  
+        paste0(group_levels[4],"_",group_levels[3]),  
+        paste0(group_levels[3],"_",group_levels[1]), 
+        paste0(group_levels[4],"_",group_levels[2]))
+
+# use GSEA function
+gsea_human(df = dmso.e_dmso.c,
+  FC_col = "logFC",
+  p_col = "P.Value",
+  name = paste0("EIF2A_proteomics_", vs[1]))
+
+gsea_human(df = tg.e_tg.c,
+  FC_col = "logFC",
+  p_col = "P.Value",
+  name = paste0("EIF2A_proteomics_", vs[2]))
+
+gsea_human(df = tg.c_dmso.c,
+  FC_col = "logFC",
+  p_col = "P.Value",
+  name = paste0("EIF2A_proteomics_", vs[3]))
+
+gsea_human(df = tg.e_dmso.e,
+  FC_col = "logFC",
+  p_col = "P.Value",
+  name = paste0("EIF2A_proteomics_", vs[4]))
+
+```
+
+
+```{r}
+df1 <- read_excel("output/GSEA_p_EIF2A_proteomics_DMSO.EIF2A_DMSO.ctrl.xlsx")
+df2 <- read_excel("output/GSEA_p_EIF2A_proteomics_Tg.EIF2A_Tg.ctrl.xlsx")
+df3 <- read_excel("output/GSEA_p_EIF2A_proteomics_Tg.ctrl_DMSO.ctrl.xlsx")
+df4 <- read_excel("output/GSEA_p_EIF2A_proteomics_Tg.EIF2A_DMSO.EIF2A.xlsx")
+df <- df1
+colnames(df)
+
+for (i in 1:6){
+plot_pathway(
+  db=i,
+  fdr_cutoff=0.05
+)
+}
+
+plot_pathway <- function(db, fdr_cutoff){
+
+  group_levels = c("DMSO.ctrl", "DMSO.EIF2A", "Tg.ctrl", "Tg.EIF2A")
+
+  vs <- c(paste0(group_levels[2],"_",group_levels[1]),  
+        paste0(group_levels[4],"_",group_levels[3]),  
+        paste0(group_levels[3],"_",group_levels[1]), 
+        paste0(group_levels[4],"_",group_levels[2]))
+  
+  plot_list <- list()
+  n_set <- list()
+  for (compare in 1:4){
+    
+  df <- read_excel(paste0("output/GSEA_p_EIF2A_proteomics_", vs[compare],".xlsx"), sheet = db) 
+  # Split strings by "/"
+  df$split_strings <- strsplit(df$core_enrichment, "/")
+
+# Count the number of strings
+  df$Gene_number <- sapply(df$split_strings, length)
+
+  df <- dplyr::select(df, -split_strings)
+
+  df$Gene_ratio <- df$Gene_number/df$setSize
+  
+  df <- df %>% filter(qvalue < fdr_cutoff) %>%
+    mutate(comparison = gsub("_"," vs ",vs[compare]))
+  
+  #df$Description <- factor(df$Description, levels = df$Description)
+?fct
+p <- ggplot(df,
+            aes(x=sign(NES)*(-log10(qvalue)), y = fct_reorder(Description,  sign(NES)*(-log10(qvalue))))) + 
+  geom_point(aes(size = Gene_ratio,
+                 colour = NES)) +
+  
+  #theme_minimal()+
+  
+  theme_bw(base_size = 14) +
+  scale_color_gradient2(#limits=c(0,5), 
+    midpoint = 0, 
+    low = "blue4",
+    mid= "white",
+    high = "red4", 
+    space = "Lab" )+
+  ylab(NULL)+
+  xlab("-log10(FDR)")+
+  theme(#axis.ticks.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x  = element_blank(),
+    panel.grid.minor.x  = element_blank(),
+        axis.text.y = element_text(colour = "black",size=14),
+        axis.text.x = element_text(colour = "black",size=12),
+        legend.title = element_text(color = "black", size = 12),
+    aspect.ratio = nrow(df)/8)+
+  labs(color = "NES",size="Gene ratio") +
+  #  facet_grid(. ~ library) +
+  #coord_cartesian(clip = "off") +
+  theme(strip.background =element_rect(fill="white") )+
+  theme(strip.text = element_text(colour = 'black')) +
+  labs(title = gsub("_"," vs ",vs[compare]),
+        #subtitle = "",
+        #caption = ""
+       )+
+  theme(
+    plot.title = element_text( size = 14, colour = "grey30", hjust = 1),    # Center title position and size
+    #plot.subtitle = element_text(hjust = 0.5),            # Center subtitle
+    #plot.caption = element_text(hjust = 0, face = "italic")# move caption to the left
+  )
+?element_text
+p
+ genesets <- c("Hallmark", "KEGG", "Reactome", "GO_BP", "GO_MF", "GO_CC")
+ 
+ plot_list[[compare]] <- p
+ n_set[[compare]] <- nrow(df)
+ # ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], "_",vs[compare], ".pdf"), width=20, height=0.7* nrow(df), units="cm")
+  }
+  
+ 
+  # custome heights
+  heights <- c(n_set[[1]]+5, n_set[[2]]+5, n_set[[3]]+3, n_set[[4]]+3)
+  
+  p <- cowplot::plot_grid(plot_list[[1]], plot_list[[2]], plot_list[[3]], plot_list[[4]],
+                     align = "v", ncol = 1,
+                     rel_heights = heights)
+  p
+  ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], "_FDR", fdr_cutoff, ".pdf"), width=20, height=0.7*sum(heights), units="cm")
+  
+  p
+  ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], "_FDR", fdr_cutoff, ".svg"), width=20, height=0.7*sum(heights), units="cm")
+  
+}
+```
+
+ pdf(file = paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], ".pdf"),
+       #onefile = F, 
+       width = 20, height = 10)
+  plot_list[[1]]
+  plot_list[[2]]
+  dev.off()
+
+
+
+
+View(df)
+
+tg.dmso_oe <- read_excel("output/GSEA_Tg.EIF2A_DMSO.EIF2A.xlsx",sheet = 1) %>%
+  filter(ID %in% df$ID) %>%
+  mutate(comparison="Tg_EIF2A vs DMSO_EIF2A")
+
+tg.dmso <- read_excel("output/GSEA_Tg_DMSO.xlsx",sheet = 1) %>%
+  filter(ID %in% df$ID) %>%
+  mutate(comparison="Tg vs DMSO")
+
+df <- rbind(tg.dmso, tg.dmso_oe)
+
+
+#df$qvalue.color <- sign(df$NES)*(-log10(df$qvalue))
+View(df)
+
+              
+df <- read.csv("output/GSEA_Reactome_common_sig_long.csv")
+View(df)
+
+tg.dmso <- read_excel("output/GSEA_Tg_DMSO.xlsx",sheet = 1) %>%
+  filter(ID %in% df$ID) %>%
+  mutate(comparison="Tg vs DMSO") %>% 
+  arrange(-qvalue)
+View(tg.dmso)
+df$Description <- factor(df$Description, levels = tg.dmso$Description)
+
+p <- ggplot(df,
+            aes(x=-log10(qvalue), y = Description)) + 
+  geom_point(aes(size = gene.ratio,
+                 colour = NES)) +
+  
+  #theme_minimal()+
+  
+  theme_bw(base_size = 14) +
+  scale_color_gradient2(#limits=c(0,5), 
+    midpoint = 1, 
+    low = "blue",
+    mid= "white",
+    high = "red", 
+    space = "Lab" )+
+  ylab(NULL)+
+  xlab("-log10(FDR)")+
+  theme(#axis.ticks.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x  = element_blank(),
+    panel.grid.minor.x  = element_blank(),
+        axis.text.y = element_text(colour = "black",size=14),
+        axis.text.x = element_text(colour = "black",size=12),
+        legend.title = element_text(color = "black", size = 12))+
+  labs(color = "NES",size="Gene ratio") +
+  #  facet_grid(. ~ library) +
+  theme(strip.background =element_rect(fill=alpha(cbPalette[1], 0.2) ))+
+  theme(strip.text = element_text(colour = 'black')) +
+  facet_wrap("comparison")
+
+p
+
+ggsave(filename="figures/GSEA_Reactome_common_sig.pdf",width=40,height=18,units="cm")
+
+```
+

@@ -1,0 +1,173 @@
+---
+title: "EIF2A_proteomics"
+author: "Howard Cen"
+date: "2023-10-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r libraries}
+library(tidyverse)
+
+#BiocManager::install("org.Hs.eg.db")
+library(org.Hs.eg.db) # for converting human gene IDs
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) ##Set working directory
+
+dir.create("input")
+dir.create("output")
+dir.create("figures")
+
+```
+
+
+```{r processing}
+raw <- read.csv(file = "input/Pic877_ProteinGroups.csv")
+group <- paste(c(rep("DMSO",6),rep("Tg",6)),c(rep("ctrl",3),rep("EIF2A",3),rep("ctrl",3),rep("EIF2A",3)),sep = ".")
+sample <- paste0(group,".", seq(1:3))
+colnames(raw)[4:15] <- sample
+write.csv(raw, "output/EIF2A_proteomics_raw.csv", row.names = F)
+
+
+raw <- read.csv(file = "output/EIF2A_proteomics_raw.csv")
+View(raw)
+ttest.df <- read.delim(file = "input/EIF2A_proteomics_welch_ttest_pairwise.txt")
+View(ttest.df)
+df <- left_join(raw,ttest.df[-c(37,39)],by="Protein.Ids")
+View(df)
+df.ttest <- df[,c(1:15,grep("p.value",colnames(df)), grep("q.value",colnames(df)))]
+View(df.ttest)
+write.csv(df.ttest, "output/EIF2A_proteomics_welch_ttest.csv", row.names = F)
+
+
+#
+
+df <- read.csv(file = "output/EIF2A_proteomics_welch_ttest.csv") %>%
+  mutate(logFC_DMSO_EIF2A.ctrl=rowMeans(df[7:9],na.rm=T)/rowMeans(df[4:6],na.rm=T),
+         logFC_Tg_EIF2A.ctrl=rowMeans(df[13:15],na.rm=T)/rowMeans(df[10:12],na.rm=T),
+         logFC_Tg.DMSO_ctrl=rowMeans(df[10:12],na.rm=T)/rowMeans(df[4:6],na.rm=T),
+         logFC_Tg.DMSO_EIF2A=rowMeans(df[13:15],na.rm=T)/rowMeans(df[7:9],na.rm=T),) %>%
+  mutate(sig_DMSO_EIF2A.ctrl=ifelse(Welch.s.T.test.p.value.DMSO_OE_DMSO<0.005, "TRUE",NA),
+         sig_Tg_EIF2A.ctrl=ifelse(Welch.s.T.test.p.value.TG_OE_TG<0.005, "TRUE",NA),
+         sig_Tg.DMSO_ctrl=ifelse(Welch.s.T.test.p.value.TG_DMSO<0.005, "TRUE",NA),
+         sig_Tg.DMSO_EIF2A=ifelse(Welch.s.T.test.p.value.TG_OE_DMSO_OE<0.005, "TRUE",NA))
+
+View(df)
+colnames(df)
+write.csv(df, "output/EIF2A_proteomics_annotated.csv", row.names = F)
+
+
+#
+df <- read.csv(file = "output/EIF2A_proteomics_annotated.csv")
+df$entrez <- mapIds(org.Hs.eg.db, keys=df$Genes, keytype="SYMBOL", column="ENTREZID", multiVals="first") 
+df$fullname <- mapIds(org.Hs.eg.db, keys=df$Genes, keytype="SYMBOL", column="GENENAME", multiVals="first")
+df$entrez <- as.character(df$entrez)
+df$fullname <- as.character(df$fullname)
+
+str(df)
+View(df)
+
+write.csv(df, "output/EIF2A_proteomics_annotated.csv", row.names = F)
+
+de <- df %>% filter(Welch.s.T.test.p.value.DMSO_OE_DMSO<0.005 |
+                      Welch.s.T.test.p.value.TG_OE_TG<0.005 |
+                      Welch.s.T.test.p.value.TG_DMSO<0.005 |
+                      Welch.s.T.test.p.value.TG_OE_DMSO_OE<0.005)
+
+de <- df %>% filter(Welch.s.T.test.p.value.DMSO_OE_DMSO<0.005 |
+                      Welch.s.T.test.p.value.TG_OE_TG<0.005 )
+
+dim(de)
+View(de)
+
+```
+
+
+```{r}
+pro <- read.csv( "output/EIF2A_proteomics_annotated.csv")
+View(pro)
+colnames(pro)
+pro.long <- pro[3:15] %>%
+  pivot_longer(cols = colnames(pro)[4:15],names_to = 'sample', values_to = 'Intensity')
+View(pro.long)
+
+library(ggbeeswarm) # for geom_quasirandom
+
+library(scales) # for log10 breaks (and scale to z score for heatmap)
+
+library(stringr) # for wrapping x axis labels at certain width
+samp.name <- unique(pro.long$sample)
+ggplot(pro.long, # only plot genes with FPKM>=0.01
+       aes(x = sample, y = Intensity))+
+  geom_quasirandom(method = "pseudorandom",cex=0.5, alpha=0.3, color = "grey")+
+  geom_boxplot(fill="white",outlier.shape = NA, width=0.15, alpha=0.6) +
+  labs(y="Protein intensity" #,color = expression(atop("Digestive",paste("enzyme")))
+       )+
+  #scale_color_brewer(palette="Accent")+
+  #scale_colour_manual(values=cbPalette)+
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                labels = trans_format("log10", math_format(10^.x))) +
+  #scale_y_continuous(trans='log10' #,breaks=c(1,8,128,2048,32768)
+  #                   )+
+
+  scale_x_discrete(limits=c("DMSO.ctrl.1","DMSO.ctrl.2","DMSO.ctrl.3",
+                            "DMSO.EIF2A.1","DMSO.EIF2A.2","DMSO.EIF2A.3",
+                            "Tg.ctrl.1","Tg.ctrl.2","Tg.ctrl.3",
+                            "Tg.EIF2A.1","Tg.EIF2A.2","Tg.EIF2A.3" ),
+                   labels = c("DMSO.\nctrl.1","DMSO.\nctrl.2","DMSO.\nctrl.3",
+                            "DMSO.\nEIF2A.1","DMSO.\nEIF2A.2","DMSO.\nEIF2A.3",
+                            "Tg.\nctrl.1","Tg.\nctrl.2","Tg.\nctrl.3",
+                            "Tg.\nEIF2A.1","Tg.\nEIF2A.2","Tg.\nEIF2A.3" )
+                   #labels = function(x) stringr::str_wrap(x=, width = 1)
+                   ) + # wrap x labels
+  
+  theme_classic()+
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(colour = "black",size=14),
+        axis.text.y = element_text(colour = "black",size=12),
+        axis.text.x = element_text(colour = "black",size=12),
+        #axis.ticks.x = element_blank(),
+        #legend.title = element_blank(),
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=14),
+        legend.position="right",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+        #aspect.ratio=1/2.5
+        )+
+  guides(colour = guide_legend(override.aes = list(size=2,alpha=0.7))) +
+  annotation_logticks(sides = "l")  
+
+ggsave(filename="figures/sample_intensity_boxplot.pdf",width=9,height=4,units="in")
+
+colSums(pro[4:15], na.rm = T)
+summary(pro[4:15])
+```
+> colSums(pro[4:15], na.rm = T)
+ DMSO.ctrl.1  DMSO.ctrl.2  DMSO.ctrl.3 DMSO.EIF2A.1 DMSO.EIF2A.2 DMSO.EIF2A.3    Tg.ctrl.1    Tg.ctrl.2    Tg.ctrl.3   Tg.EIF2A.1   Tg.EIF2A.2 
+   133995550    139824992    141725323    144096719    142719378    143877065    140623388    146956100    146388531    151485542    154525339 
+  Tg.EIF2A.3 
+   151912902 
+   
+> summary(pro[4:15])
+  DMSO.ctrl.1         DMSO.ctrl.2         DMSO.ctrl.3         DMSO.EIF2A.1      DMSO.EIF2A.2        DMSO.EIF2A.3         Tg.ctrl.1        
+ Min.   :     19.2   Min.   :     20.8   Min.   :      4.3   Min.   :      8   Min.   :      6.6   Min.   :      4.3   Min.   :      8.1  
+ 1st Qu.:   2209.9   1st Qu.:   2096.6   1st Qu.:   2233.3   1st Qu.:   2079   1st Qu.:   2175.1   1st Qu.:   2117.3   1st Qu.:   2329.3  
+ Median :   5869.6   Median :   5754.6   Median :   5928.6   Median :   5659   Median :   5920.1   Median :   5774.8   Median :   5937.4  
+ Mean   :  19981.4   Mean   :  20520.3   Mean   :  20680.8   Mean   :  20757   Mean   :  21000.5   Mean   :  20716.6   Mean   :  21136.8  
+ 3rd Qu.:  17181.0   3rd Qu.:  17312.6   3rd Qu.:  17230.5   3rd Qu.:  17001   3rd Qu.:  17586.1   3rd Qu.:  16911.5   3rd Qu.:  17403.3  
+ Max.   :1200000.0   Max.   :1450000.0   Max.   :1670000.0   Max.   :1540000   Max.   :1450000.0   Max.   :1580000.0   Max.   :1470000.0  
+ NA's   :709         NA's   :601         NA's   :562         NA's   :473       NA's   :619         NA's   :470         NA's   :762        
+   Tg.ctrl.2           Tg.ctrl.3           Tg.EIF2A.1          Tg.EIF2A.2          Tg.EIF2A.3       
+ Min.   :      5.5   Min.   :      6.2   Min.   :     14.3   Min.   :     21.5   Min.   :      8.8  
+ 1st Qu.:   2047.9   1st Qu.:   2142.6   1st Qu.:   2205.0   1st Qu.:   2124.2   1st Qu.:   2171.7  
+ Median :   5612.0   Median :   5816.8   Median :   5904.9   Median :   5692.2   Median :   5707.9  
+ Mean   :  21415.9   Mean   :  21330.1   Mean   :  22037.5   Mean   :  22598.0   Mean   :  22336.8  
+ 3rd Qu.:  17432.5   3rd Qu.:  17185.8   3rd Qu.:  17471.7   3rd Qu.:  17481.2   3rd Qu.:  17116.6  
+ Max.   :1390000.0   Max.   :1530000.0   Max.   :1720000.0   Max.   :1950000.0   Max.   :1830000.0  
+ NA's   :553         NA's   :552         NA's   :541         NA's   :577         NA's   :614  
