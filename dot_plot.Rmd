@@ -1,0 +1,85 @@
+---
+title: "Dot plot"
+author: "Howard Cen"
+date: "2024-07-26"
+output: html_document
+---
+
+```{r }
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) ##Set working directory to where this file is.
+getwd()
+library(tidyverse)
+library(ggnewscale)
+
+
+```
+
+
+```{r}
+df <- readxl::read_xlsx("input/gene_dotplot.xlsx")
+View(df)
+df <- pivot_longer(df, cols = 2:3)
+
+df$name <- gsub(" ","\n", df$name)
+df$name <- factor(df$name, levels = unique(df$name))
+df <- mutate(df, size = ifelse(is.na(value), NA, 2))
+mean.pro <- mean(df[df$name=="Protein\n(Intensity)",]$value, na.rm = T)
+mean.rna <- mean(df[df$name=="mRNA\n(FKPM)",]$value, na.rm = T)
+
+df$Tissue <- str_to_sentence(df$Tissue)
+df$Tissue <- factor(df$Tissue, levels = unique(df$Tissue))
+
+p <- ggplot(df,
+            aes(x=name, y = Tissue)) + 
+  
+  geom_point(aes(fill = value, size = size), 
+             filter(df, name == "Protein\n(Intensity)"),
+             shape=22) +
+  scale_fill_gradient2(low = "purple4", mid = "white", high = "green4",
+                       midpoint = mean.pro, 
+                       na.value = "grey",
+                       name = "Protein\n(Intensity)") +
+
+  ggnewscale::new_scale_fill() +
+  geom_point(aes(fill = value, size = size), 
+             filter(df, name == "mRNA\n(FKPM)"),
+             shape=21) +
+  scale_fill_gradient2(low = "purple4", mid = "white", high = "green4",
+                       midpoint = mean.rna, 
+                       na.value = "grey",
+                       name = "mRNA\n(FKPM)"
+                       ) +
+  
+  
+  theme_minimal(base_size = 10) +
+  scale_y_discrete(limits=rev) +
+  #scale_x_continuous(breaks=seq(1, 9, 2)) +
+  ylab(NULL)+
+  xlab(NULL)+
+  theme(
+    panel.border = element_rect(fill=NA, colour = "black", linewidth = 0.5),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x  = element_blank(),
+    panel.grid.minor.x  = element_blank(),
+    panel.grid.minor.y  = element_blank(),
+    axis.text.y = element_text(colour = "black",size=10),
+    axis.text.x = element_text(colour = "grey20",size=8),
+    legend.title = element_text(color = "black", size = 8))+
+  labs(fill = "",size="") +
+  facet_grid(. ~ Gene) +
+  guides(size = "none") +
+  theme(strip.background =element_rect(fill= NA,color = NA ))+
+  theme(strip.text = element_text(colour = 'black', size = 11)) 
+p
+
+ggsave(plot = p, 
+       filename="figures/EIF2A_dotplot.pdf",width=6,height=3.5,units="in")
+
+ggsave(plot = p, 
+       filename="figures/EIF2A_dotplot.svg",width=6,height=3.5,,units="in",
+       device = svg)
+?scale_colour_gradientn
+```
+

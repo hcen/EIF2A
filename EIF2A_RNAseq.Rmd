@@ -1,0 +1,1179 @@
+---
+title: "EIF2A_RNAseq"
+author: "Howard Cen"
+date: "2024-03-14"
+output: html_document
+---
+
+```{r library}
+library(tidyverse)
+#BiocManager::install("DESeq2")
+
+install.packages("S4Arrays_1.4.0.tar.gz", repos = NULL, type = "source")
+
+install.packages("DelayedArray_0.30.1.tar.gz", repos = NULL, type = "source")
+
+library("DESeq2")
+
+
+#library(EnhancedVolcano)
+library(org.Mm.eg.db)
+
+#library(readxl) # for reading excel file
+library(ComplexHeatmap)
+library(circlize) # installed with ComplexHeatmap, but need to load it
+library(gridtext) # needed for complex heatmap
+library(scales) # for calculating z-scores etc
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) ##Set working directory to where this file is.
+getwd()
+
+```
+
+```{r process}
+con0_2 <- read.table(file="input/CON0-2.counts.genes") %>% rename(control0_2=V2)
+con0_3 <- read.table(file="input/CON0-3.counts.genes") %>% rename(control0_3=V2)
+con0_4 <- read.table(file="input/CON0-4.counts.genes") %>% rename(control0_4=V2)
+con0_5 <- read.table(file="input/CON0-5.counts.genes") %>% rename(control0_5=V2)
+
+con1_2 <- read.table(file="input/CON1-2.counts.genes") %>% rename(control1_2=V2)
+con1_3 <- read.table(file="input/CON1-3.counts.genes") %>% rename(control1_3=V2)
+con1_4 <- read.table(file="input/CON1-4.counts.genes") %>% rename(control1_4=V2)
+con1_5 <- read.table(file="input/CON1-5.counts.genes") %>% rename(control1_5=V2)
+
+con3_2 <- read.table(file="input/CON3-2.counts.genes") %>% rename(control3_2=V2)
+con3_3 <- read.table(file="input/CON3-3.counts.genes") %>% rename(control3_3=V2)
+con3_4 <- read.table(file="input/CON3-4.counts.genes") %>% rename(control3_4=V2)
+con3_5 <- read.table(file="input/CON3-5.counts.genes") %>% rename(control3_5=V2)
+
+eIF2A0_2 <- read.table(file="input/eIF2A0-2.counts.genes") %>% rename(eIF2A0_2=V2)
+eIF2A0_3 <- read.table(file="input/eIF2A0-3.counts.genes") %>% rename(eIF2A0_3=V2)
+eIF2A0_4 <- read.table(file="input/eIF2A0-4.counts.genes") %>% rename(eIF2A0_4=V2)
+eIF2A0_5 <- read.table(file="input/eIF2A0-5.counts.genes") %>% rename(eIF2A0_5=V2)
+
+eIF2A1_2 <- read.table(file="input/eIF2A1-2.counts.genes") %>% rename(eIF2A1_2=V2)
+eIF2A1_3 <- read.table(file="input/eIF2A1-3.counts.genes") %>% rename(eIF2A1_3=V2)
+eIF2A1_4 <- read.table(file="input/eIF2A1-4.counts.genes") %>% rename(eIF2A1_4=V2)
+eIF2A1_5 <- read.table(file="input/eIF2A1-5.counts.genes") %>% rename(eIF2A1_5=V2)
+
+eIF2A3_2 <- read.table(file="input/eIF2A3-2.counts.genes") %>% rename(eIF2A3_2=V2)
+eIF2A3_3 <- read.table(file="input/eIF2A3-3.counts.genes") %>% rename(eIF2A3_3=V2)
+eIF2A3_4 <- read.table(file="input/eIF2A3-4.counts.genes") %>% rename(eIF2A3_4=V2)
+eIF2A3_5 <- read.table(file="input/eIF2A3-5.counts.genes") %>% rename(eIF2A3_5=V2)
+
+raw.counts <- bind_cols(con0_2,con0_3,con0_4,con0_5,con1_2,con1_3,con1_4,con1_5,con3_2,con3_3,con3_4,con3_5,
+                        eIF2A0_2,eIF2A0_3,eIF2A0_4,eIF2A0_5,eIF2A1_2,eIF2A1_3,eIF2A1_4,eIF2A1_5,eIF2A3_2,eIF2A3_3,eIF2A3_4,eIF2A3_5)
+dim(raw.counts)
+head(raw.counts)
+rownames(raw.counts) <- raw.counts$V1...1
+raw.counts <- raw.counts[,c(2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48)]
+write.table(raw.counts, sep="\t",file="input/rawcounts.txt", 
+          row.names=TRUE,col.names=NA,quote=FALSE)
+
+sample= c("control0_2","control0_3","control0_4","control0_5","control1_2","control1_3","control1_4","control1_5","control3_2","control3_3","control3_4","control3_5",
+         "eIF2A0_2","eIF2A0_3","eIF2A0_4","eIF2A0_5","eIF2A1_2","eIF2A1_3","eIF2A1_4","eIF2A1_5","eIF2A3_2","eIF2A3_3","eIF2A3_4","eIF2A3_5")
+treatment=c("control","control","control","control","control","control","control","control","control","control","control","control",
+       "eIF2A","eIF2A","eIF2A","eIF2A","eIF2A","eIF2A","eIF2A","eIF2A","eIF2A","eIF2A","eIF2A","eIF2A")
+time=c(0,0,0,0,1,1,1,1,3,3,3,3,0,0,0,0,1,1,1,1,3,3,3,3)
+group=paste(treatment,time,sep="_")
+meta.data <- data.frame(sample,treatment,time,group)
+rownames(meta.data) <- meta.data$sample
+head(meta.data)
+write.table(meta.data, sep="\t",file="input/metadata.txt", 
+            row.names=TRUE,col.names=NA,quote=FALSE)
+```
+
+```{r modified PCA function}
+### plots PCA for the first two principal components
+getMethod("plotPCA","DESeqTransform")
+
+# use color blind friendly palette
+cbPalette <- c("#CC79A7", #magenta"
+               "#E69F00", #lightorange
+               "#D55E00", #darkorange
+               
+               "#009E73", #green
+               "#56B4E9", #blue
+               "#0072B2", #darkblue
+               "#F0E442", #yellow
+               "#999999" #grey
+)
+
+plotPCA.format <- function (object, ...) 
+{
+  .local <- function (object, intgroup = "condition", 
+                      ntop = 500, returnData = FALSE) 
+  {
+    rv <- rowVars(assay(object))
+    select <- order(rv, decreasing = TRUE)[seq_len(min(ntop, 
+                                                       length(rv)))]
+    pca <- prcomp(t(assay(object)[select, ]))
+    percentVar <- pca$sdev^2/sum(pca$sdev^2)
+    if (!all(intgroup %in% names(colData(object)))) {
+      stop("the argument 'intgroup' should specify columns of colData(dds)")
+    }
+    intgroup.df <- as.data.frame(colData(object)[, intgroup, 
+                                                 drop = FALSE])
+    group <- if (length(intgroup) > 1) {
+      factor(apply(intgroup.df, 1, paste, collapse = ":"))
+    }
+    else {
+      colData(object)[[intgroup]]
+    }
+    d <- data.frame(PC1 = pca$x[, 1], PC2 = pca$x[, 2], group = group, 
+                    intgroup.df, name = colnames(object))
+    if (returnData) {
+      attr(d, "percentVar") <- percentVar[1:2]
+      return(d)
+    }
+    ggplot(data = d, aes_string(x = "PC1", y = "PC2", 
+                                fill = "group")) + geom_point(size = 4, shape=21,alpha=0.6) + 
+      xlab(paste0("PC1: ", round(percentVar[1] * 100), "% variance")) + 
+      ylab(paste0("PC2: ", round(percentVar[2] * 100), "% variance")) + 
+      coord_fixed() #+  geom_label_repel((aes(label=sample)))
+  }
+  .local(object, ...)
+}
+
+
+
+
+```
+
+```{r DESeq2}
+meta.data <- read.table("input/metadata.txt", row.names = 1)
+raw.counts <- read.table("input/GSE166829_rawcounts.txt")
+View(raw.counts)
+View(meta.data)
+
+summary(raw.counts)
+colSums(raw.counts)
+
+meta.data <- meta.data[-grep("_2",rownames(meta.data)), ]
+raw.counts <- raw.counts[,-grep("_2",colnames(raw.counts))]
+
+### create DESeq matrix
+count.data.set = DESeqDataSetFromMatrix(countData=raw.counts, 
+                                        colData=meta.data, design= ~ group) 
+
+keep <- rowSums(counts(count.data.set)>=5) >= ncol(raw.counts) *0.25 # genes counts more than 5 in at least 10 samples
+count.filter <- count.data.set[keep,]
+nrow(count.filter) # 14415 (used to be 14486) genes
+
+# create DESeq object
+#count.data.set.object <- DESeq(count.data.set)
+count.data.set.object <- DESeq(count.filter)
+
+# normalized counts (without VST)
+dds <- estimateSizeFactors(count.data.set.object)
+normalized.counts <- counts(dds, normalized=TRUE)
+write.csv(normalized.counts, file="output/norm_counts.csv")
+
+# 'vst' normalization (varianceStabilizingTransformation)
+vsd <- vst(count.data.set.object)
+
+### extract normalized counts
+norm.data = assay(vsd)
+head(norm.data)
+#write.table(norm.data, sep="\t",file="output/Norm_data_all_genes_noFilter.txt", 
+#            row.names=TRUE,col.names=NA,quote=FALSE)
+
+write.csv(norm.data, file="output/norm_vst.csv" )
+
+### hierarchical clustering analyses and to plot a dendrogram. Evaluate dissimilarities (calculate Euclidean distance) between all eight replicates based on their normalized gene counts.
+sampleDists <- dist(t(norm.data),  method = "euclidean")
+### Having the distance (dissimilarity) we can finally perform hierarchical cluster analysis using hclust function
+clusters=hclust(sampleDists)
+
+{pdf(file = "figures/RNAseq_cluster_noOutlier.pdf", width = 6, height = 4.5)
+plot(clusters)
+dev.off()}
+
+
+#install.packages("ggrepel")
+library(ggrepel) # https://ggrepel.slowkow.com/articles/examples.html
+
+# PCA with sample label
+plotPCA.format(vsd, intgroup=c("group"))+ 
+  geom_text_repel(aes(label=colData(vsd)$sample),size=3,
+                  color="grey50",
+                  box.padding   = 0.4,
+                  point.padding = 0,
+                  #force=1,
+                  #force_pull=10,
+                  max.overlaps = Inf, # always show all label, regardless of overlap
+                  #min.segment.length = 0, # always draw line
+                  segment.color = 'grey50')+
+  scale_fill_manual(values=cbPalette) +
+  theme_bw()+
+  theme(panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.x  = element_blank(),
+        panel.grid.major.x  = element_blank(),
+        axis.text = element_text(size = 13),
+        axis.title = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        legend.title = element_blank()
+  )+
+  theme(aspect.ratio=1/1)
+ggsave(filename="figures/PCA_sample_noOutlier.pdf",width=5,height=3,units="in")
+
+# PCA without sample label
+plotPCA.format(vsd, intgroup=c("group"))+ 
+  scale_fill_manual(values=cbPalette) +
+  theme_bw()+
+  theme(panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.x  = element_blank(),
+        panel.grid.major.x  = element_blank(),
+        axis.text = element_text(size = 13),
+        axis.title = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        legend.title = element_blank()
+  )+
+  theme(aspect.ratio=1/1)
+ggsave(filename="figures/PCA_noOutlier.pdf",width=5,height=3,units="in")
+
+# FYI, this is the default function plotPCA()
+#plotPCA(vsd, intgroup=c("group"))
+
+library("pheatmap")
+library("RColorBrewer")
+
+sampleDistMatrix <- as.matrix( sampleDists )
+#rownames(sampleDistMatrix) <- paste( vsd$dex, vsd$cell, sep = " - " )
+#colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pDist<-pheatmap(sampleDistMatrix,
+                clustering_distance_rows = sampleDists,
+                clustering_distance_cols = sampleDists,
+                col = colors)
+save_pheatmap_png <- function(x, filename, width=1200, height=1000, res = 150) {
+  png(filename, width = width, height = height, res = res)
+  grid::grid.newpage()
+  grid::grid.draw(x$gtable)
+  dev.off()
+}
+save_pheatmap_png(pDist, "pDist.png")
+dev.off()
+```
+
+
+```{r distribution boxplots}
+
+# normalized counts
+norm.count <- read.csv("output/norm_counts.csv", row.names = 1)
+View(norm.count)
+rna <- norm.count %>%
+  rownames_to_column(var = "symbol")
+colnames(rna)
+
+# raw counts
+raw.counts <- read.table("input/GSE166829_rawcounts.txt")
+raw.counts <- raw.counts[,-grep("_2",colnames(raw.counts))]
+raw <- raw.counts %>%
+  rownames_to_column(var = "symbol")
+
+distribution_boxplot(df=rna,
+                    dat_col= c(2:19),
+                    name = "normCounts"
+                    )
+distribution_boxplot(df=raw,
+                    dat_col= c(2:19),
+                    name = "rawCounts"
+                    )
+
+violin_boxplot(df=rna,
+                    dat_col= c(2:19),
+                    name = "normCounts"
+                    )
+violin_boxplot(df=raw,
+                    dat_col= c(2:19),
+                    name = "rawCounts"
+                    )
+
+library(ggbeeswarm) # for geom_quasirandom
+library(scales) # for log10 breaks (and scale to z score for heatmap)
+#library(stringr) # for wrapping x axis labels at certain width
+
+distribution_boxplot <- function(df, dat_col, name){
+  
+  df.long <- df %>%
+  pivot_longer(cols = dat_col, names_to = 'sample', values_to = 'levels')
+  
+  df.long$sample <- factor(df.long$sample, levels = colnames(df)[dat_col])
+  
+  p <- ggplot(df.long, # only plot genes with FPKM>=0.01
+         aes(x = sample, y = levels))+
+    geom_quasirandom(method = "pseudorandom",cex=0.5, alpha=0.3, color = "grey")+
+    geom_boxplot(fill="white",outlier.shape = NA, width=0.15, alpha=0.6) +
+    labs(y= name #,color = expression(atop("Digestive",paste("enzyme")))
+       )+
+  #scale_color_brewer(palette="Accent")+
+  #scale_colour_manual(values=cbPalette)+
+    scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                  labels = trans_format("log10", math_format(10^.x))) +
+  #scale_y_continuous(trans='log10' #,breaks=c(1,8,128,2048,32768)
+  #                   )+
+    scale_x_discrete(limits=colnames(df[,dat_col]),
+                   labels = c("control\nTg_0h_3", "control\nTg_0h_4", "control\nTg_0h_5", "control\nTg_0h_3", "control\nTg_1h_4", "control\nTg_1h_5", "control\nTg_3h_3", "control\nTg_3h_4", "control\nTg_3h_5", "eIF2A\nTg_0h_3"  , "eIF2A\nTg_0h_4", "eIF2A\nTg_0h_5", "eIF2A\nTg_1h_3", "eIF2A\nTg_1h_4", "eIF2A\nTg_1h_5", "eIF2A\nTg_3h_3", "eIF2A\nTg_3h_4", "eIF2A\nTg_3h_5")
+                   #labels = function(x) stringr::str_wrap(x=, width = 1)
+                   ) + # wrap x labels
+  
+  theme_classic()+
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(colour = "black",size=14),
+        axis.text.y = element_text(colour = "black",size=12),
+        axis.text.x = element_text(colour = "black",size=12),
+        #axis.ticks.x = element_blank(),
+        #legend.title = element_blank(),
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=14),
+        legend.position="right",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+        #aspect.ratio=1/2.5
+        )+
+  guides(colour = guide_legend(override.aes = list(size=2,alpha=0.7))) +
+  annotation_logticks(sides = "l")  
+  
+  p
+  ggsave(filename=paste0("figures/RNAseq_boxplot_", name, ".pdf"), width=15,height=4,units="in")
+  p
+  ggsave(filename=paste0("figures/RNAseq_boxplot_", name, ".svg"), width=15,height=4,units="in")
+}
+
+
+violin_boxplot <- function(df, dat_col, name){
+  
+  df.long <- df %>%
+  pivot_longer(cols = dat_col, names_to = 'sample', values_to = 'levels')
+  
+  df.long$sample <- factor(df.long$sample, levels = colnames(df)[dat_col])
+  
+  p <- ggplot(df.long, # only plot genes with FPKM>=0.01
+         aes(x = sample, y = levels))+
+    geom_violin( alpha=0.5, color = "grey", fill = "grey") + 
+    geom_boxplot(fill="white",outlier.shape = NA, width=0.15, alpha=0.6) +
+    labs(y= name #,color = expression(atop("Digestive",paste("enzyme")))
+       )+
+  #scale_color_brewer(palette="Accent")+
+  #scale_colour_manual(values=cbPalette)+
+    scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                  labels = trans_format("log10", math_format(10^.x))) +
+  #scale_y_continuous(trans='log10' #,breaks=c(1,8,128,2048,32768)
+  #                   )+
+    scale_x_discrete(limits=colnames(df[,dat_col]),
+                   labels = c("control\nTg_0h_3", "control\nTg_0h_4", "control\nTg_0h_5", "control\nTg_0h_3", "control\nTg_1h_4", "control\nTg_1h_5", "control\nTg_3h_3", "control\nTg_3h_4", "control\nTg_3h_5", "eIF2A\nTg_0h_3"  , "eIF2A\nTg_0h_4", "eIF2A\nTg_0h_5", "eIF2A\nTg_1h_3", "eIF2A\nTg_1h_4", "eIF2A\nTg_1h_5", "eIF2A\nTg_3h_3", "eIF2A\nTg_3h_4", "eIF2A\nTg_3h_5")
+                   #labels = function(x) stringr::str_wrap(x=, width = 1)
+                   ) + # wrap x labels
+  
+  theme_classic()+
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(colour = "black",size=14),
+        axis.text.y = element_text(colour = "black",size=12),
+        axis.text.x = element_text(colour = "black",size=12),
+        #axis.ticks.x = element_blank(),
+        #legend.title = element_blank(),
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=14),
+        legend.position="right",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+        #aspect.ratio=1/2.5
+        )+
+  guides(colour = guide_legend(override.aes = list(size=2,alpha=0.7))) +
+  annotation_logticks(sides = "l")  
+  ?geom_violin
+  p
+  ggsave(filename=paste0("figures/RNAseq_violin_", name, ".pdf"), width=15,height=4,units="in")
+  p
+  ggsave(filename=paste0("figures/RNAseq_violin_", name, ".svg"), width=15,height=4,units="in")
+}
+
+```
+
+
+### DEG
+``` {r differential expression}
+    
+compare_list <- list( c("eIF2A_0", "control_0"), 
+    c("eIF2A_1", "control_1"),
+    c("eIF2A_3", "control_3"),
+    c("eIF2A_1", "eIF2A_0"),
+    c("control_1", "control_0"),
+    c("eIF2A_3", "eIF2A_0"),
+    c("control_3", "control_0") )
+
+lfc_threshold = 1
+
+for (i in 1:length(compare_list)) {
+  res <- results(count.data.set.object, 
+               contrast=c("group", compare_list[[i]]),
+               alpha = 0.05, lfcThreshold = lfc_threshold)
+  summary(res)
+  out <- capture.output(summary(res))
+  cat(paste0( compare_list[[i]][1], " vs ", compare_list[[i]][2] ), out, file=paste0("output/results_summary_noOutlier_lfc",lfc_threshold, ".txt"), sep="\n", append=TRUE)
+  
+  
+  res = as.data.frame(na.omit(res))
+  res.ord = res[order(res$padj),]
+  res.ord$symbol=rownames(res.ord)
+  res.ord$entrez = mapIds(org.Mm.eg.db, keys=rownames(res.ord), column="ENTREZID", keytype="SYMBOL", multiVals="first") %>%
+  as.character()
+  res.ord$fullname = mapIds(org.Mm.eg.db, keys=res.ord$entrez, column="GENENAME", keytype="ENTREZID", multiVals="first") %>%
+  as.character()
+  
+  fpath <- paste0("output/RNAseq_DESeq2_", gsub("_", "", compare_list[[i]][1]) , "_", gsub("_", "", compare_list[[i]][2]),"_noOutlier_lfc", lfc_threshold, ".csv")
+  write.csv(res.ord, file= fpath, row.names=FALSE)
+}
+
+
+```
+
+```{r old}
+
+res.sig = res.ord[res.ord$padj <= 0.05,]
+head(res.sig)
+
+res.sig$entrez = mapIds(org.Mm.eg.db, keys=rownames(res.sig), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+res.sig$symbol=rownames(res.sig)
+res.sig$description = mapIds(org.Mm.eg.db, keys=res.sig$entrez, column="GENENAME", keytype="ENTREZID", multiVals="first")
+res.sig$description <- gsub(x = res.sig$description, pattern = "\\ ",replacement = "_")
+
+res.sig <- as.data.frame(res.sig)
+View(res.sig)
+
+dup=res.sig %>% group_by(entrez) %>% dplyr::filter(n() > 1)
+View(dup)
+
+write.table(res.sig, sep="\t",file="data/Results_sig_3.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+write.table(res.sig, sep="\t",file="data/Results_sig_1.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+write.table(res.sig, sep="\t",file="data/Results_sig_0.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+
+
+Sig.up = subset(res.sig, log2FoldChange >0)
+Sig.down = subset(res.sig, log2FoldChange <0)
+##
+##
+write.table(Sig.up, sep="\t",file="data/Sig_up_3.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+write.table(Sig.down, sep="\t",file="data/Sig_down_3.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+
+write.table(Sig.up, sep="\t",file="data/Sig_up_1.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+write.table(Sig.down, sep="\t",file="data/Sig_down_1.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+
+write.table(Sig.up, sep="\t",file="data/Sig_up_0.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+write.table(Sig.down, sep="\t",file="data/Sig_down_0.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+
+##
+##
+# make a gene logFC list for networkanalyst.ca
+#res.sig = read.table(file="data/Results_sig_3.txt", row.names = 1)
+head(res.sig)
+resSig.sub = dplyr::select(res.sig, symbol,log2FoldChange)
+head(resSig.sub)
+##
+##
+write.table(resSig.sub, sep="\t",file="data/Results_sig_3_networkanalyst.txt", row.names=FALSE,quote = FALSE)
+write.table(resSig.sub, sep="\t",file="data/Results_sig_1_networkanalyst.txt", row.names=FALSE,quote = FALSE)
+write.table(resSig.sub, sep="\t",file="data/Results_sig_0_networkanalyst.txt", row.names=FALSE,quote = FALSE)
+```
+
+
+```{r heatmap all}
+norm.data <- read.csv("output/norm_vst.csv", row.names = 1)
+View(norm.data)
+
+cname <- colnames(norm.data)
+cname_ord <- cname[c(grep("control0", cname),grep("eIF2A0", cname),grep("control1", cname), grep("eIF2A1", cname), grep("control3", cname),grep("eIF2A3", cname))]
+
+norm.data <- norm.data[, cname_ord]
+m <- norm.data[, cname_ord]
+
+m.z <- t(scale(t(m))) # scale -- calculate Z-score for columns: [(x-mean)/SD]; t -- transpose the matrix; log2 -- log2 transform the data
+colnames(m.z)
+max(m.z)
+min(m.z)
+View(m.z)
+#rownames(m.z) <- rownames(m) # set gene names as rownames of m.z
+
+# plot heatmap  --------------
+# (originally established by Yi Han Xia)
+
+number_c0 <- length(grep("control0", colnames(m.z))) # grep() -- find the position/index of, in this case, column names that contain the pattern "DN"
+number_c1 <- length(grep("control1", colnames(m.z)))
+number_c3 <- length(grep("control3", colnames(m.z)))
+
+number_e0 <- length(grep("eIF2A0", colnames(m.z))) # grep() -- find the position/index of, in this case, column names that contain the pattern "DN"
+number_e1 <- length(grep("eIF2A1", colnames(m.z)))
+number_e3 <- length(grep("eIF2A3", colnames(m.z)))
+
+end_c0 <- grep("control0", colnames(m.z))[number_c0] # get the end position/index of each group
+end_c1 <- grep("control1", colnames(m.z))[number_c1]
+end_c3 <- grep("control3", colnames(m.z))[number_c3]
+
+end_e0 <- grep("eIF2A0", colnames(m.z))[number_e0]
+end_e1 <- grep("eIF2A1", colnames(m.z))[number_e1]
+end_e3 <- grep("eIF2A3", colnames(m.z))[number_e3]
+
+
+#set.seed(12) # run this to get the same k-means clusters 
+cbPalette <- c("#CC79A7", #magenta"
+               "#E69F00", #lightorange
+               "#D55E00", #darkorange
+               
+               "#009E73", #green
+               "#56B4E9", #blue
+               "#0072B2", #darkblue
+               "#F0E442", #yellow
+               "#999999" #grey
+)
+
+# heatmap for DMSO_EIF2A vs DMSO or Tg_EIF2A vs Tg                
+heatmap <- Heatmap(m.z,
+                   show_row_names = FALSE,
+                   show_column_names = FALSE,
+                   show_row_dend = TRUE,
+                   show_column_dend = FALSE,
+                   
+                   clustering_distance_rows = "euclidean",
+                   clustering_method_rows = "ward.D2", # default linkage method is "complete"
+                   
+                   row_dend_side = "left",
+                   row_dend_width = unit(15, "mm"),
+                   
+                   column_names_side = "top",
+                   column_dend_side = "bottom",
+                   
+                   row_labels = gt_render(rownames(m.z)), ### now we set row names (genes) as labels
+                   row_names_gp = gpar(fontsize = 10),
+                  
+                   col = colorRamp2(c(-3,0,3), c("blue", "white", "red")), # set the color range from Z-score -3 to 3 (saturate the outliers,  if you didn't remove them).
+                   #col = colorRamp2(c(min(na.omit(m.z)),0,max(na.omit(m.z))), c("blue", "white", "red")), # alternatively, set the range from min to max value
+                   
+                   column_order = 1:ncol(m.z),
+                   
+                   height = unit(220, "mm"), # set the height of heatmap
+                   width = ncol(m.z)*unit(8, "mm"), # set the column width
+                   
+                   top_annotation = columnAnnotation(empty = anno_empty(border = FALSE, 
+                                                                        height = unit(6, "mm"))), # leave an empty space on top for the condition labels below.
+                   
+#                   right_annotation = 
+#                           rowAnnotation(`DMSO_EIF2A vs DMSO` = de$sig_DMSO_EIF2A.ctrl,
+#                                         `Tg_EIF2A vs Tg` = de$sig_Tg_EIF2A.ctrl,
+                                         
+                                         
+#                                         col = list(`DMSO_EIF2A vs DMSO` = c("TRUE" = cbPalette[1]),
+#                                                    `Tg_EIF2A vs Tg` = c("TRUE" = cbPalette[2])
+#                                         ),
+#                                         annotation_legend_param = list(
+                      
+#                                           `DMSO_EIF2A vs DMSO` = list(
+#                                             title = c(""),
+#                                             labels = "DMSO_EIF2A vs DMSO"#expression(italic("Ins1")^italic("+/+")*" Sucrose vs Water") #expression() issue - https://github.com/jokergoo/ComplexHeatmap/issues/678
+#                                           ),
+                      
+#                                           `Tg_EIF2A vs Tg` = list(
+#                                             title = c(""),
+#                                             labels = "Tg_EIF2A vs Tg"
+#                                           )
+#                                         ),
+#                                         show_annotation_name = FALSE,
+#                                         show_legend=TRUE,
+#                                         na_col = "white",
+#                                         width = unit(8, "mm")
+#                      
+#                           ),
+
+                   
+                   
+                   border_gp = gpar(col = "black"), # set border color
+                   
+                   show_heatmap_legend = TRUE,
+                   heatmap_legend_param = list(
+                     title = "Row z-score",
+                     title_position = "topleft",
+                     #at = c(-3, -2, -1, 0, 1, 2, 3), # set ticks/numbers of legend
+                     legend_height = unit(4, "cm")),
+                   
+                   #split = 4, # split the heatmap into separate blocks by hierarchical clustering
+                   #row_km = 4, # or split the heatmap into separate blocks by k-means clustering
+                   ## determine the number of clusters: https://www.datanovia.com/en/lessons/determining-the-optimal-number-of-clusters-3-must-know-methods/
+                   
+                  layer_fun = function(j, i, x, y, width, height, fill) {
+                     mat = restore_matrix(j, i, x, y)
+                     
+                     ind = unique(c(mat[, c(end_c0,
+                                            end_e1,
+                                            end_c1,
+                                            end_e1,
+                                            end_c3
+                                            ) # enter the number where you want a gap between columns
+                                        ])) 
+                     
+                     grid.rect(x = x[ind] + unit(0.5/ncol(m.z), "npc"), 
+                               y = y[ind], 
+                               width = unit(0.03, "inches"), # width of the gap
+                               height = unit(1/nrow(m.z), "npc"),
+                               gp = gpar(col = "white", fill = "white") # color of the gap
+                     )
+                   }
+                   ) 
+
+draw(heatmap)
+
+# save and label heatmap ---------------
+
+#step 1 - save a pdf file
+{pdf(file = 'figures/heatmap_EIF2A_RNAseq_all.pdf',
+    width = 8.5, 
+    height = 10)
+    
+#step 2 - draw heatmap in the saved file
+draw(heatmap)
+
+#step 3 - draw the labeling on the heatmap in the saved file
+
+# labeling heatmap
+#list_components() # get the viewport names
+seekViewport("annotation_empty_1") # seek the empty space we saved at the top of heatmap, called "annotation_empty_1"
+
+## draw text labels
+grid.text(paste0("Control/nTg_0h"), parse = TRUE,
+          x = (end_c0)/2/ncol(m.z), # location at the middle of DN
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11,
+                    col = "black"))
+
+grid.text(paste0("EIF2A/nTg_0h"), parse = TRUE,
+          x = (end_c0 + end_e0)/2/ncol(m.z),
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11))
+
+grid.text(paste0("Control/nTg_1h"), parse = TRUE,
+          x = (end_e0 + end_c1)/2/ncol(m.z), # location at the middle of DH
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11))
+
+grid.text(paste0("EIF2A/nTg_1h"), parse = TRUE,
+          x = (end_c1 + end_e1)/2/ncol(m.z),
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11))
+
+grid.text(paste0("Control/nTg_3h"), parse = TRUE,
+          x = (end_e1 + end_c3)/2/ncol(m.z),
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11))
+
+grid.text(paste0("EIF2A/nTg_3h"), parse = TRUE,
+          x = (end_c3 + end_e3)/2/ncol(m.z),
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11))
+
+dev.off()
+}
+
+## Top label vertical gaps
+grid.rect(x = end_index_DN/ncol(m.z),
+          y = 0,
+          height = 1,
+          width = unit(0.03, "inches"), # same width as the width of gaps in heatmap
+          just = c("center", "bottom"),
+          gp = gpar(fill = "white", 
+                    col = "white", 
+                    lwd = 1
+          ))
+grid.rect(x = end_index_DH/ncol(m.z),
+          y = 0,
+          height = 1,
+          width = unit(0.03, "inches"),
+          just = c("center", "bottom"),
+          gp = gpar(fill = "white", 
+                    col = "white", 
+                    lwd = 1
+          ))
+grid.rect(x = end_index_IN/ncol(m.z),
+          y = 0,
+          height = 1,
+          width = unit(0.03, "inches"),
+          just = c("center", "bottom"),
+          gp = gpar(fill = "white", 
+                    col = "white", 
+                    lwd = 1
+          ))
+
+# step 4 - close the plotting device (the saved file)
+dev.off()
+```
+
+
+```{r}
+##
+library("clusterProfiler")
+res.sig0 <- read.table(file="data/Results_sig_0.txt",row.names = 1)
+res.sig1 <- read.table(file="data/Results_sig_1.txt",row.names = 1)
+res.sig3 <- read.table(file="data/Results_sig_3.txt",row.names = 1)
+head(res.sig0)
+
+norm.data <- read.table(file="data/Norm_data_all_genes.txt",row.names = 1)
+norm.data$entrez <- mapIds(org.Mm.eg.db, keys=rownames(norm.data), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+View(norm.data)
+dup=norm.data %>% group_by(entrez) %>% dplyr::filter(n() > 1)
+View(dup)
+nrow(dup)
+all.genes <- norm.data$entrez
+
+KEGG<- enrichKEGG(gene         = res.sig1$entrez,
+                      organism     = 'mmu',
+                      universe      = all.genes,
+                      pvalueCutoff=0.05, pAdjustMethod="BH", 
+                      qvalueCutoff=0.1)
+KEGG <- setReadable(KEGG, OrgDb = org.Mm.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+head(KEGG)
+KEGG.df=as.data.frame(KEGG)
+KEGG.df$Description <- gsub(x = KEGG.df$Description, pattern = "\\ ",replacement = "_")
+View(KEGG.df)
+
+
+KEGG<- enrichKEGG(gene         = res.sig3$entrez,
+                  organism     = 'mmu',
+                  universe      = all.genes,
+                  pvalueCutoff=0.05, pAdjustMethod="BH", 
+                  qvalueCutoff=0.1)
+KEGG <- setReadable(KEGG, OrgDb = org.Mm.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+head(KEGG)
+KEGG.df=as.data.frame(KEGG)
+KEGG.df$Description <- gsub(x = KEGG.df$Description, pattern = "\\ ",replacement = "_")
+View(KEGG.df)
+
+
+
+KEGG<- enrichKEGG(gene         = res.sig0$entrez,
+                  organism     = 'mmu',
+                  universe      = all.genes,
+                  pvalueCutoff=0.05, pAdjustMethod="BH", 
+                  qvalueCutoff=0.1)
+KEGG <- setReadable(KEGG, OrgDb = org.Mm.eg.db, keyType="ENTREZID") # The geneID column is translated from EntrezID to symbol
+head(KEGG)
+KEGG.df=as.data.frame(KEGG)
+KEGG.df$Description <- gsub(x = KEGG.df$Description, pattern = "\\ ",replacement = "_")
+View(KEGG.df)
+
+##
+##
+write.table(KEGG.df, sep="\t",file="data/KEGG_3.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+write.csv(KEGG.df, sep="\t",file="data/KEGG_3.csv", row.names=TRUE,col.names=NA,quote=FALSE)
+
+write.table(KEGG.df, sep="\t",file="data/KEGG_1.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+write.csv(KEGG.df, sep="\t",file="data/KEGG_1.csv", row.names=TRUE,col.names=NA,quote=FALSE)
+
+write.table(KEGG.df, sep="\t",file="data/KEGG_0.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+write.csv(KEGG.df, sep="\t",file="data/KEGG_0.csv", row.names=TRUE,col.names=NA,quote=FALSE)
+##
+##
+
+#=================================== plot KEGG network (not in paper)
+
+
+geneList = res.sig0[,2]
+names(geneList) = as.character(res.sig0$symbol)
+
+geneList = res.sig1[,2]
+names(geneList) = as.character(res.sig1$symbol)
+
+geneList = res.sig3[,2]
+names(geneList) = as.character(res.sig3$symbol)
+
+geneList = sort(geneList, decreasing = TRUE)
+head(geneList)
+
+View(KEGG.df)
+#
+p <- cnetplot(KEGG, showCategory=14,
+              node_label="gene",
+              categorySize="pvalue", colorEdge = TRUE,
+              order=TRUE, by="pvalue", foldChange=geneList)+
+  scale_color_gradient2(high='red', low='blue', midpoint=0, mid="white")+
+  labs(color = "log2 fold change",size="Gene count")
+
+cowplot::plot_grid(p,ncol=1, rel_widths=1)
+
+ggsave(
+  filename="cnet_KEGG_BS_BG.png",
+  plot = last_plot(),
+  device = NULL,
+  path = NULL,
+  scale = 1,
+  width = 8,
+  height = 7,
+  units = "in",
+  dpi = 600,
+  limitsize = F
+)
+
+
+## plot KEGG terms
+KEGG0 <- read.table(file="data/KEGG_0.txt",row.names = 1)
+KEGG1 <- read.table(file="data/KEGG_1.txt",row.names = 1)
+KEGG3 <- read.table(file="data/KEGG_3.txt",row.names = 1)
+
+KEGG0$Description <- gsub(x = KEGG0$Description, pattern = "\\_",replacement = " ")
+KEGG1$Description <- gsub(x = KEGG1$Description, pattern = "\\_",replacement = " ")
+KEGG3$Description <- gsub(x = KEGG3$Description, pattern = "\\_",replacement = " ")
+
+colnames(KEGG0) <- paste(colnames(KEGG0),"0", sep = "_")
+colnames(KEGG1) <- paste(colnames(KEGG1),"1", sep = "_")
+colnames(KEGG3) <- paste(colnames(KEGG3),"3", sep = "_")
+View(KEGG0)
+KEGG.merge<- right_join(KEGG0, KEGG1, by =c("Description_0"="Description_1"))
+KEGG.merge<- left_join(KEGG.merge, KEGG3, by =c("Description_0"="Description_3"))
+View(KEGG.merge)
+write.table(KEGG.merge, sep="\t",file="data/KEGG_merge1.txt", row.names=TRUE,col.names=NA,quote=FALSE)
+write.csv(KEGG.merge, sep="\t",file="data/KEGG_merge1.csv", row.names=TRUE,col.names=NA,quote=FALSE)
+
+KEGG.merge <- read.csv(file="data/KEGG_merge1.csv", row.names=1)
+
+##
+KEGG.m <- KEGG.merge %>% mutate(x1="0h") %>% mutate(x2="1h") %>% mutate(x3="3h") %>%
+  mutate(Log10adj.P_0=-log10(p.adjust_0)) %>% 
+  mutate(Log10adj.P_1=-log10(p.adjust_1)) %>%
+  mutate(Log10adj.P_3=-log10(p.adjust_3))
+View(KEGG.m)
+
+p <- ggplot(KEGG.m, 
+            aes(y = fct_reorder(Description_0, Log10adj.P_1))) + 
+  geom_point(aes(size = Count_0, color = Log10adj.P_0, x=x1)) +
+  geom_point(aes(size = Count_1, color = Log10adj.P_1, x=x2))+
+  geom_point(aes(size = Count_3, color = Log10adj.P_3, x=x3))+
+  theme_bw(base_size = 10) +
+  theme(panel.grid.major = element_blank())+
+  scale_color_gradient2(#limits=c(-8,5) ,
+                        midpoint = 0, low = "blue", mid = "lightsalmon",
+                        high = "red4", space = "Lab" )+
+  ylab(NULL)+
+  xlab(NULL)+
+  xlim("0h","1h","3h")+
+  theme(axis.ticks.x = element_blank(),
+        axis.text.y = element_text(colour = "black",size=10),
+        axis.text.x = element_text(colour = "black",size=10),
+        legend.title = element_text(color = "black", size = 10))+
+  labs(color = "-log10 adj. p",size="Gene count")
+# legend.text = element_blank())+
+# 
+p
+p <- ggplot(KEGG.m, 
+            aes(y = fct_reorder(Description_0, Log10adj.P_1))) + 
+  geom_point(aes(size = GeneRatio_0, color = Log10adj.P_0, x=x1)) +
+  geom_point(aes(size = GeneRatio_1, color = Log10adj.P_1, x=x2))+
+  geom_point(aes(size = GeneRatio_3, color = Log10adj.P_3, x=x3))+
+  theme_bw(base_size = 10) +
+  scale_color_gradient2(#limits=c(-8,5) ,
+    midpoint = 0, low = "blue", mid = "white",
+    high = "red", space = "Lab" )+
+  ylab(NULL)+
+  xlab(NULL)+
+  xlim("0h","1h","3h")+
+  theme(axis.ticks.x = element_blank(),
+        axis.text.y = element_text(colour = "black",size=10),
+        axis.text.x = element_text(colour = "black",size=10),
+        legend.title = element_text(color = "black", size = 10))+
+  labs(color = "-log10 adj. p",size="Gene ratio")
+
+
+p
+ggsave(
+  filename="KEGG_BS-ST-AS_BG.png",
+  plot = last_plot(),
+  device = NULL,
+  path = NULL,
+  scale = 1,
+  width = 8,
+  height = 7,
+  units = "in",
+  dpi = 600,
+  limitsize = F
+)
+
+
+#================================== Compare 3 time points
+library(VennDiagram)
+t0 = read.table(file="data/Results_sig_0.txt", row.names = 1)
+t1 = read.table(file="data/Results_sig_1.txt", row.names = 1)
+t3 = read.table(file="data/Results_sig_3.txt", row.names = 1)
+
+grid.newpage()
+grid::grid.draw(VennDiagram::venn.diagram(list("0h"=t0$symbol,
+                                               "1h"=t1$symbol,
+                                               "3h"=t3$symbol), NULL)) #6.5x5.5in
+
+
+venn <- get.venn.partitions(list("0h"=t0$symbol,
+                                 "1h"=t1$symbol,
+                                 "3h"=t3$symbol))
+str(venn)
+head(venn)
+
+list <- select(venn,..set..,..values..)
+View(list)
+str(list)
+
+#### separate nested lists, tranfer wide to long format
+library(splitstackshape)
+df_venn <- listCol_w(venn, "..values..", fill = NA)
+View(df_venn)
+venn_long <- df_venn %>% 
+  tidyr::pivot_longer(cols=..values.._fl_0001:..values.._fl_1243,values_to = "gene")%>% 
+  na.omit()%>% dplyr::select(!name)
+View(venn_long)
+write.csv(venn_long,"Venn_long.csv", row.names = FALSE)
+write.table(venn_long,file="Venn_long.txt",sep="\t",row.names=TRUE,col.names=NA,quote=FALSE)
+
+write.table(venn_long$gene,file="Venn_long_gene.txt",sep="\t",row.names=F,quote=FALSE)
+
+#========== Filter out TFs that are not expressed in our RNAseq
+TFall <- read.csv(file="data/node_table_TFall.csv")
+TFall.p <- read.csv(file="data/node_table_TFall_protein.csv")
+TFall.g <- read.csv(file="data/node_table_TFall_GTEx.csv")
+head(TFall)
+norm.data <- read.table(file="data/Norm_data_all_genes.txt",row.names = 1)
+head(norm.data)
+norm.data$entrez <- mapIds(org.Mm.eg.db, keys=rownames(norm.data), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+norm.data.noNA <- na.omit(norm.data)
+
+grid.newpage()
+grid::grid.draw(VennDiagram::venn.diagram(list("TF"=TFall$Id,
+                                               "norm_counts"=norm.data.noNA$entrez), NULL)) #6.5x5.5in
+venn <- get.venn.partitions(list("TF"=TFall$Id,
+                                 "counts"=norm.data.noNA$entrez))
+View(venn)
+mapIds(org.Mm.eg.db, keys=c("23871", "14460"), column="SYMBOL", keytype="ENTREZID", multiVals="first")
+
+
+
+#====================================
+res.sig0 <- read.table(file="data/Results_sig_0.txt",row.names = 1)
+res.sig1 <- read.table(file="data/Results_sig_1.txt",row.names = 1)
+res.sig3 <- read.table(file="data/Results_sig_3.txt",row.names = 1)
+
+head(res.sig0)
+
+colnames(res.sig0) <- paste(colnames(res.sig0),"0h", sep = "_")
+colnames(res.sig1) <- paste(colnames(res.sig1),"1h", sep = "_")
+colnames(res.sig3) <- paste(colnames(res.sig3),"3h", sep = "_")
+
+res.sig.merge <- merge(res.sig0, res.sig1, by=0, all=TRUE)
+rownames(res.sig.merge) <- res.sig.merge$Row.names
+
+res.sig.merge <- merge(res.sig.merge, res.sig3, by=0, all=TRUE)
+
+res.sig.merge <- res.sig.merge[,-2] %>% dplyr::rename(gene=Row.names)
+View(res.sig.merge)
+
+res.sig.allFC <- res.sig.merge %>% dplyr::select(gene,log2FoldChange_0h,log2FoldChange_1h,log2FoldChange_3h,padj_0h,padj_1h,padj_3h)
+
+View(res.sig.allFC)
+write.table(res.sig.allFC, sep="\t",file="data/sig-0-1-3h_allFC-p.txt", 
+            row.names=TRUE,col.names=NA,quote=FALSE)
+write.csv(res.sig.allFC, sep="\t",file="data/sig-0-1-3h_allFC-p.csv", 
+            row.names=TRUE,col.names=NA,quote=FALSE)
+#
+res.sig.allFC.long <- res.sig.allFC %>% 
+  tidyr::pivot_longer(cols=2:4,values_to = "log2FC")%>% 
+  na.omit()
+res.sig.allFC.long$absFC <- abs(res.sig.allFC.long$log2FC)
+View(res.sig.allFC.long)
+
+res.sig.allFC.long1 <- res.sig.allFC.long[order(res.sig.allFC.long[,'gene'],-res.sig.allFC.long[,'absFC']),] 
+View(res.sig.allFC.long1)
+
+res.sig.allFC.long1 <- res.sig.allFC.long1[!duplicated(res.sig.allFC.long1$gene),] 
+dup1=res.sig.allFC.long1 %>% group_by(gene) %>% dplyr::filter(n() > 1) 
+View(dup1)
+
+res.sig.allFC.long1 <- res.sig.allFC.long1[order(-res.sig.allFC.long1[,'absFC']),]
+res.sig.allFC.long.top <- res.sig.allFC.long1[c(1:50),]
+View(res.sig.allFC.long.top)
+
+res.sig.allFC.top <- res.sig.allFC %>% dplyr::filter(gene %in% c(res.sig.allFC.long.top$gene))
+
+colnames(res.sig.allFC.top) <- c("gene","0h","1h","3h")
+res.sig.allFC.top[is.na(res.sig.allFC.top)] <- 0
+
+View(res.sig.allFC.top)
+
+library("gplots")
+m <- as.matrix(as.data.frame(lapply(res.sig.allFC.top[,-1], as.numeric),check.names=F))
+View(m)
+hclust.ave <- function(x) hclust(x, method="average")
+par(oma=c(2,2,2,2))
+heatmap.2(m,
+          labRow = res.sig.allFC.top$gene,
+          scale = "none", 
+          col = bluered(100), 
+          trace = "none", 
+          density.info = "none",
+          cexRow = 0.7,
+          cexCol = 0.8,
+          offsetRow = -0.2,
+          offsetCol = 0,
+          distfun = dist,
+          #hclustfun = hclust,
+          hclustfun=hclust.ave,
+          Colv=FALSE,
+          dendrogram='row',
+          key=TRUE, keysize=0.75, key.title = F,key.xlab="log2 fold change",cex.lab=5.0, cex.axis=5.0,
+          #key.par=list(mar=c(1,1,1,1)),
+          lhei=c(2,12), lwid=c(2,2),  
+          key.par = list(cex=0.6)
+          )
+dev.off()
+?heatmap.2()
+
+####################### 
+# Select top 50 DEGs with lowest adj P value among all 3 timepoints
+res.sig.allFC.long <- res.sig.allFC %>% 
+  tidyr::pivot_longer(cols=5:7,values_to = "adjP") 
+View(res.sig.allFC.long)
+res.sig.allFC.long1 <- res.sig.allFC.long[-c(2:4)] %>% na.omit()
+res.sig.allFC.long1 <- res.sig.allFC.long1[order(res.sig.allFC.long1[,'gene'],res.sig.allFC.long1[,'adjP']),] 
+View(res.sig.allFC.long1)
+
+res.sig.allFC.long1 <- res.sig.allFC.long1[!duplicated(res.sig.allFC.long1$gene),] 
+dup1=res.sig.allFC.long1 %>% group_by(gene) %>% dplyr::filter(n() > 1) 
+View(dup1)
+
+res.sig.allFC.long1 <- res.sig.allFC.long1[order(res.sig.allFC.long1[,'adjP']),]
+res.sig.allFC.long.top <- res.sig.allFC.long1[c(1:50),]
+View(res.sig.allFC.long.top)
+
+res.sig.allFC.top <- res.sig.allFC %>% dplyr::filter(gene %in% c(res.sig.allFC.long.top$gene))
+
+View(res.sig.allFC.top)
+##
+sig.m <- res.sig.allFC.top %>% mutate(x1="0h") %>% mutate(x2="1h") %>% mutate(x3="3h") %>%
+  mutate(Log10adj.P_0=-log10(padj_0h)) %>% 
+  mutate(Log10adj.P_1=-log10(padj_1h)) %>%
+  mutate(Log10adj.P_3=-log10(padj_3h))
+View(sig.m)
+
+p <- ggplot(sig.m, 
+            aes(y = fct_reorder(gene, Log10adj.P_0))) + 
+  geom_point(aes(color = log2FoldChange_0h, size = Log10adj.P_0, x=x1)) +
+  geom_point(aes(color = log2FoldChange_1h, size = Log10adj.P_1, x=x2))+
+  geom_point(aes(color = log2FoldChange_3h, size = Log10adj.P_3, x=x3))+
+  theme_bw(base_size = 8) +
+  theme(panel.grid.major = element_blank())+
+  scale_color_gradient2(#limits=c(-8,5) ,
+    midpoint = 0, low = "blue4", mid = "white",
+    high = "red4", space = "Lab" )+
+  ylab(NULL)+
+  xlab(NULL)+
+  xlim("0h","1h","3h")+
+  theme(axis.ticks.x = element_blank(),
+        axis.text.y = element_text(colour = "black",size=8),
+        axis.text.x = element_text(colour = "black",size=8),
+        legend.title = element_text(color = "black", size = 8))+
+  labs(size = "-log10 adj. p",color="log2 fold change") # 4.5x7.5in
+# legend.text = element_blank())+
+# 
+p
+##
+## rank by fold change then p
+head(sig.m)
+sig.m1 <- sig.m
+
+sig.m1 <- sig.m1%>% mutate(rankFC=coalesce(log2FoldChange_0h,log2FoldChange_1h))
+sig.m1 <- sig.m1%>% mutate(rankP=coalesce(Log10adj.P_0,Log10adj.P_1))
+sig.m1.up <- sig.m1 %>% filter(rankFC>0)
+View(sig.m1.up)
+
+sig.m1.down <- sig.m1 %>% filter(rankFC<0)
+View(sig.m1.down)
+
+
+sig.m1.up <- sig.m1.up[order(-sig.m1.up[,'Log10adj.P_0'],-sig.m1.up[,'Log10adj.P_1'],-sig.m1.up[,'Log10adj.P_3']),] 
+sig.m1.down <- sig.m1.down[order(-sig.m1.down[,'Log10adj.P_0'],-sig.m1.down[,'Log10adj.P_1'],-sig.m1.down[,'Log10adj.P_3']),] 
+sig.m1.down=sig.m1.down[order(nrow(sig.m1.down):1),]
+
+sig.m2 <- rbind(sig.m1.up,sig.m1.down)
+View(sig.m2)
+sig.m2$y <- c(1:50)
+p <- ggplot(sig.m2, 
+            aes(y = fct_reorder(gene,-y))) + 
+  geom_point(aes(color = log2FoldChange_0h, size = Log10adj.P_0, x=x1)) +
+  geom_point(aes(color = log2FoldChange_1h, size = Log10adj.P_1, x=x2))+
+  geom_point(aes(color = log2FoldChange_3h, size = Log10adj.P_3, x=x3))+
+  theme_bw(base_size = 8) +
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())+
+  scale_color_gradient2(#limits=c(-8,5) ,
+    midpoint = 0, low = "blue4", mid = "white",
+    high = "red4", space = "Lab" )+
+  ylab(NULL)+
+  xlab(NULL)+
+  xlim("0h","1h","3h")+
+  theme(axis.ticks.x = element_blank(),
+        axis.text.y = element_text(colour = "black",size=8),
+        axis.text.x = element_text(colour = "black",size=8),
+        legend.title = element_text(color = "black", size = 8))+
+  labs(size = "-log10 adj. p",color="log2 fold change") # 2.5x7.5in
+p
+p <- ggplot(sig.m2, aes(y = gene)) + 
+  geom_point(aes(color = log2FoldChange_0h, size = Log10adj.P_0, x=x1)) +
+  geom_point(aes(color = log2FoldChange_1h, size = Log10adj.P_1, x=x2))+
+  geom_point(aes(color = log2FoldChange_3h, size = Log10adj.P_3, x=x3))+
+  theme_bw(base_size = 8) +
+  theme(panel.grid.major = element_blank())+
+  scale_color_gradient2(#limits=c(-8,5) ,
+    midpoint = 0, low = "blue4", mid = "white",
+    high = "red4", space = "Lab" )+
+  ylab(NULL)+
+  xlab(NULL)+
+  xlim("0h","1h","3h")+
+  theme(axis.ticks.x = element_blank(),
+        axis.text.y = element_text(colour = "black",size=8),
+        axis.text.x = element_text(colour = "black",size=8),
+        legend.title = element_text(color = "black", size = 8))+
+  labs(size = "-log10 adj. p",color="log2 fold change") # 4.5x7.5in
+
+# legend.text = element_blank())+
+# 
+p
+?factor()
+##
+##
+library("gplots")
+m <- as.matrix(as.data.frame(lapply(res.sig.allFC.top[,-1], as.numeric),check.names=F))
+View(m)
+hclust.ave <- function(x) hclust(x, method="average")
+par(oma=c(2,2,2,2))
+heatmap.2(m,
+          labRow = res.sig.allFC.top$gene,
+          scale = "none", 
+          col = bluered(100), 
+          trace = "none", 
+          density.info = "none",
+          cexRow = 0.7,
+          cexCol = 0.8,
+          offsetRow = -0.2,
+          offsetCol = 0,
+          distfun = dist,
+          #hclustfun = hclust,
+          hclustfun=hclust.ave,
+          Colv=FALSE,
+          dendrogram='row',
+          key=TRUE, keysize=0.75, key.title = F,key.xlab="log2 fold change",cex.lab=5.0, cex.axis=5.0,
+          #key.par=list(mar=c(1,1,1,1)),
+          lhei=c(2,12), lwid=c(2,2),  
+          key.par = list(cex=0.6)
+)
+dev.off()
+?heatmap.2()
+
+```

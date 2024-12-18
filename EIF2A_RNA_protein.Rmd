@@ -1,0 +1,329 @@
+---
+title: "EIF2A_RNA_vs_protein"
+author: "Howard Cen"
+date: "2023-10-26"
+output: html_document
+---
+
+```{r libraries}
+
+library(tidyverse) # for data wrangling and more
+
+library(ggrepel) # for label text in ggplot2
+
+library(readxl)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) ##Set working directory
+
+#dir.create("input")
+#dir.create("output")
+#dir.create("figures")
+```
+
+
+```{r not used}
+convertMouseGeneList(rna0$symbol)
+x <- rna0$symbol
+
+
+
+convertHumanGeneList <- function(x){
+require("biomaRt")
+human = useMart("ensembl", dataset = "hsapiens_gene_ensembl", host = "https://dec2021.archive.ensembl.org/")
+mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://dec2021.archive.ensembl.org/")
+genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol", values = x , mart = human, attributesL = c("mgi_symbol"), martL = mouse, uniqueRows=T)
+mousex <- unique(genesV2[, 2])
+# Print the first 6 genes found to the screen
+print(head(mousex))
+return(mousex)
+}
+
+mouse.Genes <- convertHumanGeneList(pro$Genes)
+length(mouse.Genes)
+length(pro$Genes)
+
+```
+
+```{r}
+pro <- read.csv("output/EIF2A_proteomics_annotated.csv")
+View(pro)
+colnames(pro) <- gsub("Welch.s.T.test.","", colnames(pro))
+
+summary(pro[4:15])
+colSums(pro[4:15], na.rm = T)
+```
+
+
+```{r}
+h2m <- read.csv("input/BioMart_human2mouse.csv") # how to convert human to mouse genes https://medium.com/@daimin0514/how-to-convert-human-gene-symbols-to-mouse-gene-symbols-ad52d68e82fd
+View(h2m)
+
+pro <- read.csv("output/EIF2A_proteomics_annotated.csv")
+View(pro)
+colnames(pro) <- gsub("Welch.s.T.test.","", colnames(pro))
+
+pro.m <- pro %>%
+  left_join(h2m, by=c("Genes"="Gene.name"))
+View(pro.m)
+
+rna3 <- read.table("output/Results_Eif2a3_ctrl3.txt")
+rna0 <- read.table("output/Results_Eif2a0_ctrl0.txt")
+View(rna0)
+
+rna <- rna3 %>%
+  full_join(rna0[,-c(1,7,9)], suffix = c("_Eif2a3","_Eif2a0"),by = "symbol")
+View(rna)
+
+pro.rna <- pro.m %>%
+  inner_join(rna, by = c("Mouse.gene.name"="symbol"))
+View(pro.rna)
+
+colnames(pro.rna)
+
+pro.rna <- pro.rna %>%
+  mutate(sig_EIF2A.Tg_Ctrl.Tg = case_when(q.value.TG_OE_TG<0.05 & padj_Eif2a3<0.05 ~ "Both",
+                                          q.value.TG_OE_TG>=0.05 & padj_Eif2a3<0.05 ~ "RNA only",
+                                          q.value.TG_OE_TG<0.05 & padj_Eif2a3>=0.05 ~ "Protein only")) %>%
+  mutate(sig_EIF2A.DMSO_Ctrl.DMSO = case_when(q.value.DMSO_OE_DMSO<0.05 & padj_Eif2a0<0.05 ~ "Both",
+                                          q.value.DMSO_OE_DMSO>=0.05 & padj_Eif2a0<0.05 ~ "RNA only",
+                                          q.value.DMSO_OE_DMSO<0.05 & padj_Eif2a0>=0.05 ~ "Protein only")) %>%
+  mutate(unadj_EIF2A.Tg_Ctrl.Tg = case_when(p.value.TG_OE_TG<0.005 & padj_Eif2a3<0.05 ~ "Both",
+                                          p.value.TG_OE_TG>=0.005 & padj_Eif2a3<0.05 ~ "RNA only",
+                                          p.value.TG_OE_TG<0.005 & padj_Eif2a3>=0.05 ~ "Protein only (p<0.005)")) %>%
+  mutate(unadj_EIF2A.DMSO_Ctrl.DMSO = case_when(p.value.DMSO_OE_DMSO<0.005 & padj_Eif2a0<0.05 ~ "Both",
+                                          p.value.DMSO_OE_DMSO>=0.005 & padj_Eif2a0<0.05 ~ "RNA only",
+                                          p.value.DMSO_OE_DMSO<0.005 & padj_Eif2a0>=0.05 ~ "Protein only (p<0.005)"))
+
+write.csv(pro.rna, "output/pro_rna_EIF2A_DE_compare.csv", row.names = F)
+```
+
+```{r xy plot protein vs RNA EIF2A under Tg}
+pro.rna <- read.csv("output/pro_rna_EIF2A_DE_compare.csv")
+View(pro.rna)
+colnames(pro.rna)
+
+pro.rna$sig_EIF2A.Tg_Ctrl.Tg <- factor(pro.rna$sig_EIF2A.Tg_Ctrl.Tg, levels=c("Both", "RNA only", "Protein only"))
+pro.rna$unadj_EIF2A.Tg_Ctrl.Tg <- factor(pro.rna$unadj_EIF2A.Tg_Ctrl.Tg, levels=c("Both", "RNA only", "Protein only (p<0.005)"))
+
+cbPalette <- c(
+  #"#E69F00", #lightorange
+  "#CC79A7", #magenta
+  "#56B4E9", #blue
+  "grey90",
+  "#999999", #grey
+  "#009E73", #green
+  "#D55E00", #darkorange
+  "#0072B2", #darkblue
+  "#F0E442" #yellow
+)
+
+# use adjusted p value cutoff
+df <- pro.rna[!is.na(pro.rna$sig_EIF2A.Tg_Ctrl.Tg),]
+View(df)
+
+# use unadjusted p value cutoff
+df <- pro.rna[!is.na(pro.rna$unadj_EIF2A.Tg_Ctrl.Tg),]
+View(df)
+
+#
+dup <- df %>% group_by(Genes) %>% filter(n()>1)
+View(dup)
+
+# DYNLT1 mapped to 3 mouse gene ID. Kept the one with highest basemean in RNAseq, which is Dynlt1a
+df <- df %>%
+  filter(!(Genes == "DYNLT1" & df$Mouse.gene.name != "Dynlt1a") )
+
+write.csv(df, "output/pro_rna_DE_EIF2A.Tg_Ctrl.Tg.csv", row.names = F)
+
+write.csv(df, "output/pro_rna_DE_unadj_EIF2A.Tg_Ctrl.Tg.csv", row.names = F)
+
+
+ggplot(df,
+  
+  aes(x=log2FoldChange_Eif2a3,
+      y=logFC_Tg_EIF2A.ctrl
+      
+  )
+) +  
+  geom_vline(xintercept = 0,linetype="dashed", color = "grey70")+
+#  geom_hline(yintercept = 0,linetype="dashed", color = "grey70")+
+#  geom_smooth(
+    #        se=FALSE,
+#    method=lm
+#  )+
+  geom_point(aes(
+    
+#### change here ###
+    
+    #colour= sig_EIF2A.Tg_Ctrl.Tg 
+    colour= unadj_EIF2A.Tg_Ctrl.Tg 
+    
+                 ), size=1.2, alpha= 0.8) +
+  
+  
+#  stat_cor(method = "pearson")+ #, label.x = 3, label.y = 30
+  
+  labs(y="Protein log2(EIF2A_Tg/Ctrl_Tg)", x="RNA log2(Eif2a_Tg/Ctrl_Tg)") +
+  scale_colour_manual(values=cbPalette) +
+  #  scale_x_continuous(breaks=c(0,2,4,6,8,10,12,14),
+  #                     limits= c(1,9.5)) +
+  #  scale_y_continuous(breaks=c(0,2,4,6,8,10,12,14),
+  #                     limits= c(1,9.5)) +
+  #scale_x_continuous(limits = ~ c(-1, 1) * max(abs(.x))) +
+  #scale_y_continuous(limits = ~ c(-1, 1) * max(abs(.x)))+
+  geom_text_repel(aes(label=Genes,
+                      segment.size=0.5),
+                  size=3.5,
+                  color="black",
+                  box.padding   = 0.4,
+                  point.padding = 0,
+                 # force=10,
+                #  force_pull=1,
+                  max.overlaps = 21, # Or 14. if set to Inf - always show all label, regardless of overlap
+                  min.segment.length = 0, # always draw line
+                  segment.color = 'grey70')+
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(colour = "black",size=14),
+    axis.title.x = element_text(colour = "black",size=14),
+    axis.text.y = element_text(colour = "black",size=12),
+    axis.text.x = element_text(colour = "black",size=12),
+    #axis.ticks.x = element_blank(),
+    #legend.title = element_blank(),
+    legend.position="right",
+    legend.title=element_text(size=14), 
+    legend.text=element_text(size=14),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    aspect.ratio=1/1) +
+  
+  labs(color = 
+         "DE"
+       #"p<0.05" 
+       #expression(atop("Correlation",paste("adj.p<0.05")))
+  )+
+  theme(axis.line = element_line()) +
+  #coord_axes_inside(labels_inside = TRUE) +    #https://stackoverflow.com/questions/17753101/center-x-and-y-axis-with-ggplot2
+  guides(colour = guide_legend(override.aes = list(size=2,alpha=0.9)))
+
+
+ggsave(filename="figures/RNA_protein_DE_EIF2A.Tg_Ctrl.Tg.pdf",width=6.5,height=5,units="in",dpi=600)
+
+ggsave(filename="figures/RNA_protein_DE_unadj_EIF2A.Tg_Ctrl.Tg.pdf",width=7,height=5,units="in",dpi=600)
+
+
+```
+
+
+```{r xy plot protein vs RNA EIF2A under DMSO}
+pro.rna <- read.csv("output/pro_rna_EIF2A_DE_compare.csv")
+View(pro.rna)
+colnames(pro.rna)
+
+pro.rna$sig_EIF2A.DMSO_Ctrl.DMSO <- factor(pro.rna$sig_EIF2A.DMSO_Ctrl.DMSO, levels=c("Both", "RNA only", "Protein only"))
+pro.rna$unadj_EIF2A.DMSO_Ctrl.DMSO <- factor(pro.rna$unadj_EIF2A.DMSO_Ctrl.DMSO, levels=c("Both", "RNA only", "Protein only (p<0.005)"))
+
+cbPalette <- c(
+  "#E69F00", #lightorange
+  "#CC79A7", #magenta
+  "#56B4E9", #blue
+  "grey90",
+  "#999999", #grey
+  "#009E73", #green
+  "#D55E00", #darkorange
+  "#0072B2", #darkblue
+  "#F0E442" #yellow
+)
+
+# use adjusted p value cutoff
+df <- pro.rna[!is.na(pro.rna$sig_EIF2A.DMSO_Ctrl.DMSO),]
+View(df)
+
+# use unadjusted p value cutoff
+df <- pro.rna[!is.na(pro.rna$unadj_EIF2A.DMSO_Ctrl.DMSO),]
+View(df)
+
+dup <- df %>% group_by(Genes) %>% filter(n()>1)
+View(dup)
+# No duplicated proteins
+
+write.csv(df, "output/pro_rna_DE_EIF2A.DMSO_Ctrl.DMSO.csv", row.names = F)
+
+write.csv(df, "output/pro_rna_DE_unadj_EIF2A.DMSO_Ctrl.DMSO.csv", row.names = F)
+
+ggplot(df,
+  
+  aes(x=log2FoldChange_Eif2a0,
+      y=logFC_DMSO_EIF2A.ctrl
+      
+  )
+) +  
+  geom_vline(xintercept = 0,linetype="dashed", color = "grey70")+
+ # geom_hline(yintercept = 0,linetype="dashed", color = "grey70")+
+#  geom_smooth(
+    #        se=FALSE,
+#    method=lm
+#  )+
+  geom_point(aes(
+    
+#### change here ###
+    
+    #colour= sig_EIF2A.Tg_Ctrl.Tg 
+    colour= unadj_EIF2A.DMSO_Ctrl.DMSO 
+    
+    ), size=1.2, alpha= 0.8) +
+  
+  
+#  stat_cor(method = "pearson")+ #, label.x = 3, label.y = 30
+  
+  labs(y="Protein log2(EIF2A_DMSO/Ctrl_DMSO)", x="RNA log2(Eif2a_DMSO/Ctrl_DMSO)") +
+  scale_colour_manual(values=cbPalette) +
+  #  scale_x_continuous(breaks=c(0,2,4,6,8,10,12,14),
+  #                     limits= c(1,9.5)) +
+  #  scale_y_continuous(breaks=c(0,2,4,6,8,10,12,14),
+  #                     limits= c(1,9.5)) +
+  #scale_x_continuous(limits = ~ c(-1, 1) * max(abs(.x))) +
+  #scale_y_continuous(limits = ~ c(-1, 1) * max(abs(.x)))+
+  geom_text_repel(aes(label=Genes,
+                      segment.size=0.5),
+                  size=3.5,
+                  color="black",
+                  box.padding   = 0.4,
+                  point.padding = 0,
+                 # force=10,
+                #  force_pull=1,
+                  max.overlaps = 19, # or 13. If set to Inf - always show all label, regardless of overlap
+                  min.segment.length = 0, # always draw line
+                  segment.color = 'grey70')+
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(colour = "black",size=14),
+    axis.title.x = element_text(colour = "black",size=14),
+    axis.text.y = element_text(colour = "black",size=12),
+    axis.text.x = element_text(colour = "black",size=12),
+    #axis.ticks.x = element_blank(),
+    #legend.title = element_blank(),
+    legend.position="right",
+    legend.title=element_text(size=14), 
+    legend.text=element_text(size=14),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    aspect.ratio=1/1) +
+  
+  labs(color = 
+         "DE"
+       #"p<0.05" 
+       #expression(atop("Correlation",paste("adj.p<0.05")))
+  )+
+  theme(axis.line = element_line()) +
+  #coord_axes_inside(labels_inside = TRUE) +    #https://stackoverflow.com/questions/17753101/center-x-and-y-axis-with-ggplot2
+  guides(colour = guide_legend(override.aes = list(size=2,alpha=0.9)))
+
+
+ggsave(filename="figures/RNA_protein_DE_EIF2A.DMSO_Ctrl.DMSO.pdf",width=6.5,height=5,units="in",dpi=600)
+
+ggsave(filename="figures/RNA_protein_DE_unadj_EIF2A.DMSO_Ctrl.DMSO.pdf",width=7,height=5,units="in",dpi=600)
+
+
+
+```

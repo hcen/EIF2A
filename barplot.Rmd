@@ -1,0 +1,302 @@
+---
+title: "barplot"
+author: "Howard Cen"
+date: "2024-03-13"
+output: html_document
+---
+
+```{r }
+library(tidyverse)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) ##Set working directory
+
+```
+
+```{r select genes}
+pro <- read.csv(file = "output/EIF2A_proteomics_annotated.csv")
+View(pro)
+colnames(pro)
+
+rna <- read.csv(file = "output/norm_counts.csv", row.names = 1)
+# (not used) rna <- read.delim(file = "output/Norm_data_all_genes_Filter.txt", row.names = 1)
+View(rna)
+
+heatmap.df <- read.csv("output/heatmap_EIF2A_RNAseq_reverse_order_Tg3h_eif2a.csv")
+
+# top 50 genes in heatmap (ordered by the significance (combined padj) of 3h Tg effect (control, 3h vs 0h) and Eif2a difference (Eif2a vs control, 3h).)
+
+select_gene <- heatmap.df$symbol[1:50]
+select_gene <- select_gene[toupper(select_gene) %in% pro$Genes] # only 11 genes detected in proteomics
+# "Bloc1s1" "Bcat1"   "Slc2a2"  "Stat3"   "Ern1"    "Egfr"    "Gpt2"    "Sncb"    "Glrx"  "Dis3"    "Blvra" 
+
+# All 142 genes (changed by Tg at 1 or 3h, reversed by Eif2a in RNAseq)
+select_gene <- heatmap.df$symbol
+select_gene <- select_gene[toupper(select_gene) %in% pro$Genes] # 42 genes detected in proteomics
+# "Bloc1s1" "Bcat1"   "Slc2a2"  "Stat3"   "Ern1"    "Egfr"    "Gpt2"    "Sncb"    "Glrx"   
+# "Dis3"    "Blvra"   "Nfkb2"   "Ndufc1"  "Scgn"    "Map1b"   "Cplx2"   "Insm1"   "Aass"   
+# "Psat1"   "Scyl2"   "Cplx1"   "Pcca"    "Myl6"    "Herc4"   "Cmtr2"   "Igf2"    "Gatad2b"
+# "Arhgef2" "Pibf1"   "Ndufv3"  "Sirt1"   "Pdpr"    "Lnx1"    "Hsd17b7" "F13a1"   "Nfatc2" 
+# "Tspyl5"  "Fbp1"    "Ap2s1"   "Hspa12a" "Pcsk1"   "Zfp36"
+
+
+# manually selected genes
+select_gene <- c("Eif2a", "Aldh1a3", "Denr",# "Ano1", 
+                 "Ins", "Ins1", "Ins2", "Ep300", "Foxo3", 
+                 "Dynlt1", "Dynlt1a", "Dynlt1b" ) #Ano1 not detected in Proteomics. Dynlt1 not detected in RNAseq. Mouse has "Ins1" but human only has "INS"
+
+df.pro <- pro[3:15] %>%
+  filter(Genes %in% toupper(select_gene)) %>%
+  pivot_longer(cols = -1, names_to = 'samples', values_to = 'levels' ) %>%
+  mutate(Group = gsub("\\.[0-9]", "",samples)) %>%
+  separate(col=Group, into = c("Tg", "EIF2A", NA), remove = F ) %>%
+  mutate(EIF2A = gsub("ctrl", "Control", EIF2A)) %>%
+  mutate(omics = "Proteomics") # %>% mutate(Genes = gsub("INS", "INS1",Genes))
+
+View(df.pro)
+
+df.rna <- rna %>%
+  rownames_to_column("Genes") %>%
+  filter(Genes %in% select_gene) %>%
+  pivot_longer(cols = -1, names_to = 'samples', values_to = 'levels' ) %>%
+  mutate(Group = gsub("\\_.*", "",samples)) %>%
+  mutate(Tg = case_when(grepl('0', Group)~ 'Tg.0h',
+                        grepl('1', Group)~ 'Tg.1h',
+                        grepl('3', Group)~ 'Tg.3h'),
+         EIF2A = case_when(grepl('control', Group) ~ 'Control',
+                           grepl('eIF2A', Group) ~ 'EIF2A')) %>%
+  mutate(omics = "RNAseq") #%>%  mutate(Genes = toupper(Genes))
+
+View(df.rna)
+
+df <- rbind(df.rna, df.pro)
+
+View(df)
+
+#df$Genes <- factor(df$Genes, levels = c("Eif2a", "EIF2A", "Aldh1a3", "ALDH1A3", 
+                                        "Denr", "DENR",  
+                                        "EP300", "Ep300","Foxo3", "FOXO3", 
+                                        "Ins1", "Ins2", "INS",
+                                        "Dynlt1a", "Dynlt1b", "DYNLT1"))
+
+df$omics <- factor(df$omics, levels = c("RNAseq","Proteomics"))
+
+write.csv(df, "output/barplot_rna_protein.csv", row.names = F)
+
+
+write.csv(df, "output/barplot_rna_protein_heatmap.csv", row.names = F)
+
+write.csv(df, "output/barplot_rna_protein_TgEif2a.reverse.RNAseq.csv", row.names = F)
+
+```
+
+
+```{r plot all summary}
+df <- read.csv("output/barplot_rna_protein.csv")
+df <- read.csv("output/barplot_rna_protein_TgEif2a.reverse.RNAseq.csv")
+
+df$Genes <- factor(df$Genes, levels = c("Eif2a", "EIF2A", "Aldh1a3", "ALDH1A3", 
+                                        "Denr", "DENR",  
+                                        "EP300", "Ep300","Foxo3", "FOXO3", 
+                                        "Ins1", "Ins2", "INS",
+                                        "Dynlt1a", "Dynlt1b", "DYNLT1"))
+
+df$omics <- factor(df$omics, levels = c("RNAseq","Proteomics"))
+
+df.summary <- df %>%
+  group_by(Genes, Group) %>%
+  summarise(
+    Tg = Tg[1],
+    EIF2A = EIF2A[1],
+    omics = omics[1],
+    sd = sd(levels, na.rm = TRUE),
+    levels = mean(levels, na.rm = T),
+    n=n(),
+    se = sd / sqrt(n)
+  ) #%>%
+  #separate(col=Group, into = c("Tg", "EIF2A"), remove = F )
+View(df.summary)
+
+df.summary$Group <- factor(df.summary$Group,levels = c("control0", "eIF2A0", "control1", "eIF2A1", "control3", "eIF2A3", "DMSO.ctrl", "DMSO.EIF2A", "Tg.ctrl", "Tg.EIF2A"))
+df.summary$Tg <- factor(df.summary$Tg, levels = c("Tg.0h", "Tg.1h", "Tg.3h", "DMSO", "Tg"))
+df.summary$EIF2A <- factor(df.summary$EIF2A, levels = c('Control', 'EIF2A'))
+df.summary$omics <- factor(df.summary$omics, levels = c("RNAseq","Proteomics"))
+#df.summary$Genes <- factor(df.summary$Genes, levels = toupper(select.gene))
+GroupPalette <- c("grey40", "purple4")
+names(GroupPalette) <- levels(df.summary$EIF2A) 
+
+ 
+ggplot(df.summary, aes(x=Tg, y=levels, group = Group)) +
+  geom_bar(aes(fill=EIF2A),color="black", stat = "identity", data = df.summary,
+           position=position_dodge(0.8),width = 0.7
+           #fill = NA, color = "black"
+  ) +
+  geom_jitter( data=df , aes(linetype=Group),  color= "black", shape = 21, 
+               fill="white", size=3, alpha = 0.8,
+    position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8)
+  ) +
+  
+  geom_errorbar(
+    aes(ymin = levels-se, ymax = levels+se,group=Group),
+    #data = df.summary, 
+    width = 0.2,
+    position = position_dodge(0.8)
+  ) +
+  scale_fill_manual(values = GroupPalette) +
+  scale_color_manual(values = GroupPalette) +
+  #scale_shape_manual(values=c(18,16,17,15))+ 
+  #scale_shape_manual(values=c(23,21,24,22))+ 
+  
+  labs(x="",y="levels")+
+  theme(axis.title = element_text(#family = "Roboto Light", 
+    color="black", size=16),
+    axis.ticks = element_line(colour="black"))+
+  theme(axis.text.x = element_text(#family = "Roboto Light",
+    color="black",size=16))+ #,hjust=1,angle = 45
+  theme(axis.text.y = element_text(#family = "Roboto Light",
+    color="black",size=16))+
+  theme(legend.text = element_text(#family = "Roboto Light",
+    color="black",size=16), 
+    legend.title = element_blank(),
+    legend.position = "right" #c(0.15,0.9)
+  )+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  facet_wrap(~Genes+omics, scales = "free", 
+             ncol = 2 #6
+             )  +
+  theme(strip.text = element_text(color="black",size=16), 
+        strip.background = element_rect(fill="white",color = "white"))
+
+ggsave("RNA_protein_barplots.pdf", path="figures",width = 8, height = 20, units = "in")
+#ggsave("RNA_protein_barplots.svg", path="figures", width = 8, height = 20, units = "in")
+
+
+ggsave("RNA_protein_barplots_heatmapTop50.pdf", path="figures",width = 8, height = 44, units = "in", limitsize = FALSE)
+ggsave("RNA_protein_barplots_heatmapTop50.svg", path="figures", width = 8, height = 44, units = "in", limitsize = FALSE)
+
+ggsave("RNA_protein_barplots_Tg.Eif2a.reverse.RNAseq.pdf", path="figures",width = 24, height = 56, units = "in", limitsize = FALSE)
+ggsave("RNA_protein_barplots_Tg.Eif2a.reverse.RNAseq.svg", path="figures", width = 24, height = 56, units = "in", limitsize = FALSE)
+
+```
+
+```{r compare baseline only}
+df1 <- read.csv("output/barplot_rna_protein.csv")
+df2 <- read.csv("output/barplot_rna_protein_TgEif2a.reverse.RNAseq.csv")
+
+View(df)
+
+df1$Genes <- factor(df$Genes, levels = c("Eif2a", "EIF2A", "Aldh1a3", "ALDH1A3", 
+                                        "Denr", "DENR",  
+                                        "EP300", "Ep300","Foxo3", "FOXO3", 
+                                        "Ins1", "Ins2", "INS",
+                                        "Dynlt1a", "Dynlt1b", "DYNLT1"))
+df <- rbind(df1, df2)
+df$omics <- factor(df$omics, levels = c("RNAseq","Proteomics"))
+
+df <- df %>% 
+  filter(Tg %in% c("Tg.0h","Tg.3h", "DMSO", "Tg"))
+
+df <- df %>% 
+  filter(Tg %in% c("Tg.0h", "DMSO"))
+
+View(df)
+
+df.summary <- df %>%
+  group_by(Genes, Group) %>%
+  summarise(
+    Tg = Tg[1],
+    EIF2A = EIF2A[1],
+    omics = omics[1],
+    sd = sd(levels, na.rm = TRUE),
+    levels = mean(levels, na.rm = T),
+    n=n(),
+    se = sd / sqrt(n)
+  ) #%>%
+  #separate(col=Group, into = c("Tg", "EIF2A"), remove = F )
+View(df.summary)
+
+df.summary$Group <- factor(df.summary$Group,levels = c("control0", "control3", "eIF2A0", "eIF2A3", "DMSO.ctrl", "DMSO.EIF2A", "Tg.ctrl", "Tg.EIF2A"))
+df.summary$Tg <- factor(df.summary$Tg, levels = c("Tg.0h", "Tg.3h", "DMSO", "Tg" ))
+df.summary$EIF2A <- factor(df.summary$EIF2A, levels = c("Control", "EIF2A"))
+df.summary$omics <- factor(df.summary$omics, levels = c("RNAseq","Proteomics"))
+#df.summary$Genes <- factor(df.summary$Genes, levels = toupper(select.gene))
+View(df.summary)
+
+GroupPalette <- c("grey40", "purple4")
+names(GroupPalette) <- levels(df.summary$EIF2A) 
+
+
+#remotes::install_github("coolbutuseless/ggpattern")
+library(ggpattern)
+
+for(gene in levels(df$Genes)) {
+   
+  p <- ggplot(data= df.summary[df.summary$Genes==gene,], 
+         aes(x=Tg, y=levels, group = factor(Group))) +
+    {if(df.summary[df.summary$Genes==gene,]$omics[1] == "Proteomics") 
+      geom_bar(aes(fill=EIF2A),color="black", stat = "identity",
+               data=df.summary[df.summary$Genes==gene,], 
+               position=position_dodge(0.8),width = 0.7
+               #fill = NA, color = "black"
+               )} + 
+    {if(df.summary[df.summary$Genes==gene,]$omics[1] == "RNAseq") 
+      geom_bar_pattern(aes(fill=EIF2A), #, pattern = omics),
+                     color="black", 
+                    # data=df.summary[df.summary$Genes==gene,],
+                    stat = "identity", 
+                    position=position_dodge(0.8),width = 0.7,
+                    #position = position_dodge(preserve = "single"),
+                    #color = "white", 
+                    pattern_fill = "white",
+                    pattern_angle = 45,
+                    pattern_density = 0.4,
+                    pattern_spacing = 0.05,
+                    pattern_key_scale_factor = 0.6) } +
+    geom_jitter( data=df[df$Genes==gene,] , aes(linetype=Group),  color= "black", shape = 21, fill="white", size=3,
+                 position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8)
+                 ) +
+    geom_errorbar(
+      aes(ymin = levels-se, ymax = levels+se,group=Group),
+      width = 0.2, position = position_dodge(0.8)) +
+    scale_fill_manual(values = GroupPalette) +
+    scale_color_manual(values = GroupPalette) +
+    #scale_shape_manual(values=c(18,16,17,15))+ 
+    #scale_shape_manual(values=c(23,21,24,22))+ 
+    {if(df.summary[df.summary$Genes==gene,]$omics[1] == "RNAseq") labs(x="",y="RNA normalized counts", fill = "RNAseq")}+
+    {if(df.summary[df.summary$Genes==gene,]$omics[1] == "Proteomics") labs(x="",y="Protein intensity", fill = "Proteomics")}+
+    theme(axis.title = element_text(#family = "Roboto Light", 
+      color="black", size=16),
+      axis.ticks = element_line(colour="black"))+
+    theme(axis.text.x = element_text(#family = "Roboto Light",
+         color="black",size=16))+ #,hjust=1,angle = 45
+    theme(axis.text.y = element_text(#family = "Roboto Light",
+         color="black",size=12))+
+    theme(legend.text = element_text(#family = "Roboto Light",
+          color="black",size=16), 
+          legend.title = element_text(color = "black", size = 16),
+          #legend.title = element_blank(),
+          legend.position = "right" #c(0.15,0.9)
+          )+
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+    ggtitle(gene) +
+    theme(plot.title = element_text(hjust = 0.5, face = "italic", colour="black", size=18))
+  
+    #guides(pattern = guide_legend(override.aes = list(fill = "white")),fill = guide_legend(override.aes = list(pattern = "none")))
+    #facet_wrap(~Genes+omics, scales = "free", ncol = 2)  +
+    #theme(strip.text = element_text(color="black",size=16), strip.background = element_rect(fill="white",color = "white")) 
+
+  if (length(unique(df$Tg)) == 2) {
+    fpath <- paste0("figures/barplot1_strip_", gene, "_", df.summary[df.summary$Genes==gene,]$omics[1])
+  } else {
+    fpath <- paste0("figures/barplot2_strip_", gene, "_", df.summary[df.summary$Genes==gene,]$omics[1])
+  }
+  
+  p
+  ggsave(paste0(fpath,".pdf"), width = 4, height = 4, units = "in")
+  p
+  ggsave(paste0(fpath,".svg"), width = 4, height = 4, units = "in")
+}
+
+```
+

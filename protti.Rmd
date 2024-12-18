@@ -2,13 +2,12 @@
 title: "protti"
 author: "Howard Cen"
 date: "2024-04-05"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r }
-# Author: Enes K. Ergin
-# Date: 2023-07-13
-
 ## Load the packages required
 
 # Install the packages if not installed
@@ -23,16 +22,23 @@ library(tidyverse) # Data manipulation
 library(protti) # Main proteomics analysis package
 # Load functions from utils.R
 source("utils.R")
-packageVersion("S4Arrays")
+
+library(readxl)
+#packageVersion("S4Arrays")
 #remove.packages("S4Arrays")
 #BiocManager::install("S4Arrays")
+
+
+#install.packages("htmltools")
+#remotes::install_github("rstudio/htmltools")
+#packageVersion("htmltools")
 ## Prepare the Data for Analysis
 
 
 # Protein-Level Data
 protein_data <- read_csv("output/EIF2A_proteomics_raw.csv")[,-c(1,2)]
 protein_data <- protein_data[!is.na(protein_data$Genes),] # remove proteins with missing gene names
-View(protein_data)
+head(protein_data)
 protein_data <- protein_data[rowSums(is.na(protein_data[-1])) < 0.5*ncol(protein_data[-1]), ]
 length(protein_data$Genes) == length(unique(protein_data$Genes)) # TRUE, all gene names are unique
 
@@ -41,7 +47,7 @@ length(protein_data$Genes) == length(unique(protein_data$Genes)) # TRUE, all gen
 metadata <- data.frame(ID = colnames(protein_data)[-1])
 metadata <- separate(data = metadata, col = ID, into = c("Tg", "EIF2A", "Replica"), remove = F) %>%
   mutate(Group = paste0(Tg,"_",EIF2A))
-View(metadata)
+head(metadata)
 # Find maximum number of Replicates
 max(metadata$Replica)
 
@@ -56,7 +62,7 @@ protein_data_long <- tidyr::pivot_longer(
     names_to = "ID",
     values_to = "Intensity"
 )
-View(protein_data_long)
+head(protein_data_long)
 
 # Merge the metadata and peptide_data_longer
 protein_data_long <- dplyr::left_join(
@@ -159,7 +165,7 @@ qc_cvs(
     plot_style = "boxplot"
     #max_cv = 1000
 )
-?qc_cvs
+
 ```
 
 ```{r}
@@ -206,7 +212,7 @@ qc_data_completeness(
     intensity = Intensity_log2,
     plot = TRUE
 )
-?qc_data_completeness
+
 ```
 
 
@@ -274,7 +280,7 @@ qc_ranked_intensities(
   y_axis_transformation = "log2"
 )
 ```
-```{r}
+```{r, include=FALSE}
 # 8. Removing Problematic Samples
 # Remove instances where SampleName == "NP21"
 #protein_data_long <- dplyr::filter(
@@ -308,14 +314,6 @@ protein_data_long <- normalise(
     method = "median"
 ) # Adds normalized_"intensity" column
 
-# Plot again with log2 transformed intensity
-qc_intensity_distribution(
-    data = protein_data_long_filter,
-    sample = Sample,
-    grouping = Protein,
-    intensity_log2 = normalised_intensity_log2,
-    plot_style = "boxplot"
-)
 ```
 
 ```{r}
@@ -392,7 +390,7 @@ cowplot::plot_grid(
 )
 ```
 
-```{r}
+```{r, Limma, include=FALSE}
 ## Statistical Testing with Weighted Limma package
 
 # Transform the long to wide format
@@ -410,7 +408,7 @@ protein_data_wide <- protein_data_long %>%
     tibble::column_to_rownames(
         var = "Protein"
     )
-View(protein_data_wide)
+head(protein_data_wide)
 
 write.csv(protein_data_wide, "output/EIF2A_proteomics_log2_norm_impute.csv")
 protein_data_wide <- read.csv("output/EIF2A_proteomics_log2_norm_impute.csv", row.names = 1)
@@ -447,7 +445,7 @@ na_weight <- 0.0001
 # Replace the missing values with the na_weight
 weight_matrix[na_index] <- na_weight
 
-View(weight_matrix)
+head(weight_matrix)
 
 # Create the design matrix
 
@@ -455,7 +453,7 @@ group_levels <- c("DMSO_ctrl", "DMSO_EIF2A", "Tg_ctrl", "Tg_EIF2A")
 f <- factor(metadata$Group, levels = group_levels)
 design <- model.matrix(~0+f)
 colnames(design) <- group_levels
-View(design) 
+head(design) 
 
 # Variables
 pval_thr <- 0.05
@@ -510,12 +508,12 @@ for (i in 1:length(vs)){
   writeData(wb, vs[i], df)
 }
 saveWorkbook(wb, "output/EIF2A_proteomics_limma_DE_results.xlsx", overwrite = TRUE)
-View(df)
+
 
 ```
 
 
-```{r filter reliably detected proteins N>=2}
+```{r, 'filter reliably detected proteins N>=2', include=FALSE}
 
 dmso.e_dmso.c <- read_excel("output/EIF2A_proteomics_limma_DE_results.xlsx", sheet = 1)
 tg.e_tg.c <- read_excel("output/EIF2A_proteomics_limma_DE_results.xlsx", sheet = 2)
@@ -525,8 +523,8 @@ tg.e_dmso.e <- read_excel("output/EIF2A_proteomics_limma_DE_results.xlsx", sheet
 #protein_data_wide <- read.csv("output/EIF2A_proteomics_log2_norm_impute.csv", row.names = 1)
 protein_data_wide_non_imputed <- read.csv("output/EIF2A_proteomics_log2_norm_nonimpute.csv", row.names = 1)
 
-View(dmso.e_dmso.c)
-View(protein_data_wide_non_imputed)
+head(dmso.e_dmso.c)
+head(protein_data_wide_non_imputed)
 df = protein_data_wide_non_imputed
 group_levels = c("DMSO.ctrl", "DMSO.EIF2A", "Tg.ctrl", "Tg.EIF2A")
 samples = colnames(protein_data_wide_non_imputed)
@@ -540,7 +538,7 @@ reliable.list[[group_levels[1]]] <- rownames(df[rowSums(is.na(df[,grep(group_lev
 reliable.list[[group_levels[2]]]  <- rownames(df[rowSums(is.na(df[,grep(group_levels[2],samples)]))<2,])
 reliable.list[[group_levels[3]]]  <- rownames(df[rowSums(is.na(df[,grep(group_levels[3],samples)]))<2,])
 reliable.list[[group_levels[4]]]  <- rownames(df[rowSums(is.na(df[,grep(group_levels[4],samples)]))<2,])
-View(reliable.list)
+head(reliable.list)
 
 
 # kept the proteins that have n >=2 per group for each comparison
@@ -551,7 +549,7 @@ tg.e_tg.c_reliable <- filter(tg.e_tg.c, symbol %in% intersect(reliable.list[[3]]
 tg.c_dmso.c_reliable <- filter(tg.c_dmso.c, symbol %in% intersect(reliable.list[[1]], reliable.list[[3]]) )
 
 tg.e_dmso.e_reliable <- filter(tg.e_dmso.e, symbol %in% intersect(reliable.list[[2]], reliable.list[[4]]) )
-View(dmso.e_dmso.c_reliable)
+head(dmso.e_dmso.c_reliable)
 
 # Create a new Excel workbook
 wb <- createWorkbook()
@@ -566,167 +564,9 @@ addWorksheet(wb, vs[4])
 writeData(wb, vs[4], tg.e_dmso.e_reliable)
 
 
-saveWorkbook(wb, "output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", overwrite = FALSE)
+saveWorkbook(wb, "output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", overwrite = TRUE)
 
 
 ```
 
-
-
-
-
-```{r}
-ggplot2::ggplot(
-        stat_res_df,
-        ggplot2::aes(
-            x = log2_fc,
-            y = -log10(adj_pvalues),
-            color = significance,
-            alpha = significance
-        )
-    ) +
-    ggplot2::geom_point(size = 2) +
-    ggplot2::geom_vline(
-        xintercept = log2_fc_thr,
-        linetype = "dashed",
-        color = "darkgrey"
-    ) +
-    ggplot2::geom_vline(
-        xintercept = -log2_fc_thr,
-        linetype = "dashed",
-        color = "darkgrey"
-    ) +
-    ggplot2::geom_hline(
-        yintercept = -log10(pval_thr),
-        linetype = "dashed",
-        color = "darkgrey"
-    ) +
-    ggplot2::scale_color_manual(
-        values = c(
-            "Up regulated" = "#e63946",
-            "Down regulated" = "#1d3557",
-            "no significance" = "#b1a7a6"
-        )
-    ) +
-    ggplot2::scale_alpha_manual(
-        values = c(
-            "Up regulated" = 1.0,
-            "Down regulated" = 1.0,
-            "no significance" = 0.2
-        )
-    ) +
-    ggplot2::ggtitle("") +
-    ggplot2::labs(
-        x = "log2(Fold-Change)",
-        y = "-log10(adjusted p-value)"
-    )
-```
-```{r}
-# Plot MA
-ggplot2::ggplot(
-        stat_res_df,
-        ggplot2::aes(
-            x = average,
-            y = log2_fc,
-            color = significance,
-            alpha = significance
-        )
-    ) +
-    ggplot2::geom_point(
-        size = 3.5,
-    ) +
-    ggplot2::geom_hline(
-        yintercept = log2_fc_thr,
-        linetype = "dashed",
-        color = "darkgrey"
-    ) +
-    ggplot2::geom_hline(
-        yintercept = -log2_fc_thr,
-        linetype = "dashed",
-        color = "darkgrey"
-    ) +
-    # Draw a vertical line at the average intensity of 8
-    ggplot2::geom_vline(
-        xintercept = 8,
-        linetype = "dashed",
-        color = "#201717"
-    ) +
-    ggplot2::scale_color_manual(
-        values = c(
-            "Up regulated" = "#e63946",
-            "Down regulated" = "#1d3557",
-            "no significance" = "#b1a7a6"
-        )
-    ) +
-    ggplot2::scale_alpha_manual(
-        values = c(
-            "Up regulated" = 1.0,
-            "Down regulated" = 1.0,
-            "no significance" = 0.2
-        )
-    ) +
-    ggplot2::ggtitle("") +
-    ggplot2::labs(
-        x = "Average Intensity",
-        y = "log2(Fold-Change)"
-    )
-```
-
-# Enrichment Analysis with gProfiler2 package
-
-# Get the list of proteins
-# Background is the list of all proteins
-background <- rownames(protein_data_wide)
-# Initilize the query list
-go_list <- list()
-# Add the list of up regulated proteins
-go_list[["up_regulated"]] <- rownames(
-    stat_res_df[
-        which(
-            stat_res_df$significance == "Up regulated"
-        ),
-    ]
-)
-# Add the list of down regulated proteins
-go_list[["down_regulated"]] <- rownames(
-    stat_res_df[
-        which(
-            stat_res_df$significance == "Down regulated"
-        ),
-    ]
-)
-
-# Run the enrichment analysis with gProfiler2
-gostres <- gprofiler2::gost(
-    query = go_list[["up_regulated"]],
-    organism = "hsapiens",  # Human
-    user_threshold = 0.05,  # Enrichment p-value threshold
-    custom_bg = background, # Custom Background
-    domain_scope = "custom_annotated",
-    sources = c(            # Source of annotations
-        "GO:BP",
-        "GO:MF",
-        "GO:CC",
-        "KEGG",
-        "REAC"
-        # "WP",
-        # "HPA",
-        # "CORUM",
-        # "MIRNA",
-        # "TF",
-        # "HP"
-    ),
-    multi_query = FALSE,
-    correction_method = "fdr",
-)
-# Calculate Gene Ratio
-gostres$result$GeneRatio <- (
-    gostres$result$intersection_size / gostres$result$term_size
-)
-
-gprofiler2::gostplot(
-    gostres,
-    capped = TRUE,
-    interactive = TRUE,
-```
 

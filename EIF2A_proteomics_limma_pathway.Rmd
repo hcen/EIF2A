@@ -10,6 +10,8 @@ output: html_document
 
 library(tidyverse) # for data wrangling and more
 
+library(org.Hs.eg.db)
+
 #BiocManager::install("clusterProfiler")
 library("clusterProfiler")
 #BiocManager::install("ReactomePA")
@@ -34,13 +36,7 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) ##Set working direct
 
 
 ```{r GSEA function}
-library(tidyverse)
-library(msigdbr) # load MSigDB gene sets, v7.5.1 (released January 2022)
-library("clusterProfiler")
-library("ReactomePA")
-#install.packages("openxlsx")
-library(openxlsx)
-library(org.Hs.eg.db)
+
 gsea_human <- function(df,FC_col, p_col, name){ 
   
   #df = pro.de
@@ -65,8 +61,12 @@ gsea_human <- function(df,FC_col, p_col, name){
   
   # entrez id as names of the gene list
   names(genelist) <- df$entrez
+  
+  genelist[genelist==Inf] <- max(genelist)
+  genelist[genelist==-Inf] <-  min(genelist[is.finite(genelist)])
+  
   genelist = sort(genelist, decreasing = TRUE)
-  genelist[genelist==Inf] <- 23
+  
   genelist <- na.omit(genelist)
   
   head(genelist)
@@ -247,6 +247,13 @@ tg.e_tg.c <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xl
 tg.c_dmso.c <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 3)
 tg.e_dmso.e <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 4)
 
+dim(dmso.e_dmso.c %>% filter(adj.P.Val<0.05)) # 8 proteins
+dim(tg.e_tg.c %>% filter(adj.P.Val<0.05)) # 0 proteins
+dim(tg.c_dmso.c %>% filter(adj.P.Val<0.05)) # 151
+dim(tg.e_dmso.e %>% filter(adj.P.Val<0.05)) # 110
+df <- dmso.e_dmso.c %>% filter(adj.P.Val<0.05) 
+df$symbol
+
 View(tg.e_dmso.e)
 
 group_levels = c("DMSO.ctrl", "DMSO.EIF2A", "Tg.ctrl", "Tg.EIF2A")
@@ -279,8 +286,54 @@ gsea_human(df = tg.e_dmso.e,
 
 ```
 
+```{r GSEA proteomics without EIF2A}
 
-```{r}
+dmso.e_dmso.c <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 1)
+tg.e_tg.c <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 2)
+tg.c_dmso.c <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 3)
+tg.e_dmso.e <- read_excel("output/EIF2A_proteomics_limma_DE_results_filtered.N2.xlsx", sheet = 4)
+
+dim(dmso.e_dmso.c %>% filter(adj.P.Val<0.05)) # 8 proteins
+dim(tg.e_tg.c %>% filter(adj.P.Val<0.05)) # 0 proteins
+dim(tg.c_dmso.c %>% filter(adj.P.Val<0.05)) # 151
+dim(tg.e_dmso.e %>% filter(adj.P.Val<0.05)) # 110
+df <- dmso.e_dmso.c %>% filter(adj.P.Val<0.05) 
+df$symbol
+
+View(tg.e_dmso.e)
+
+group_levels = c("DMSO.ctrl", "DMSO.EIF2A", "Tg.ctrl", "Tg.EIF2A")
+
+vs <- c(paste0(group_levels[2],"_",group_levels[1]),  
+        paste0(group_levels[4],"_",group_levels[3]),  
+        paste0(group_levels[3],"_",group_levels[1]), 
+        paste0(group_levels[4],"_",group_levels[2]))
+
+# use GSEA function
+gsea_human(df = dmso.e_dmso.c %>% filter(symbol != "EIF2A"),
+  FC_col = "logFC",
+  p_col = "P.Value",
+  name = paste0("EIF2A_proteomics_noEIF2A_", vs[1]))
+
+gsea_human(df = tg.e_tg.c %>% filter(symbol != "EIF2A"),
+  FC_col = "logFC",
+  p_col = "P.Value",
+  name = paste0("EIF2A_proteomics_noEIF2A_", vs[2]))
+
+gsea_human(df = tg.c_dmso.c %>% filter(symbol != "EIF2A"),
+  FC_col = "logFC",
+  p_col = "P.Value",
+  name = paste0("EIF2A_proteomics_noEIF2A_", vs[3]))
+
+gsea_human(df = tg.e_dmso.e %>% filter(symbol != "EIF2A"),
+  FC_col = "logFC",
+  p_col = "P.Value",
+  name = paste0("EIF2A_proteomics_noEIF2A_", vs[4]))
+
+```
+
+
+```{r plot pathways}
 df1 <- read_excel("output/GSEA_p_EIF2A_proteomics_DMSO.EIF2A_DMSO.ctrl.xlsx")
 df2 <- read_excel("output/GSEA_p_EIF2A_proteomics_Tg.EIF2A_Tg.ctrl.xlsx")
 df3 <- read_excel("output/GSEA_p_EIF2A_proteomics_Tg.ctrl_DMSO.ctrl.xlsx")
@@ -291,7 +344,7 @@ colnames(df)
 for (i in 1:6){
 plot_pathway(
   db=i,
-  fdr_cutoff=0.05
+  fdr_cutoff=0.005
 )
 }
 
@@ -306,6 +359,13 @@ plot_pathway <- function(db, fdr_cutoff){
   
   plot_list <- list()
   n_set <- list()
+  n_char <- list()
+  
+  my_list <- list(10, 5, 8, 15, 3, 12)
+
+# Find the maximum value
+max_value <- max(unlist(my_list))
+  
   for (compare in 1:4){
     
   df <- read_excel(paste0("output/GSEA_p_EIF2A_proteomics_", vs[compare],".xlsx"), sheet = db) 
@@ -323,7 +383,7 @@ plot_pathway <- function(db, fdr_cutoff){
     mutate(comparison = gsub("_"," vs ",vs[compare]))
   
   #df$Description <- factor(df$Description, levels = df$Description)
-?fct
+
 p <- ggplot(df,
             aes(x=sign(NES)*(-log10(qvalue)), y = fct_reorder(Description,  sign(NES)*(-log10(qvalue))))) + 
   geom_point(aes(size = Gene_ratio,
@@ -362,29 +422,163 @@ p <- ggplot(df,
     #plot.subtitle = element_text(hjust = 0.5),            # Center subtitle
     #plot.caption = element_text(hjust = 0, face = "italic")# move caption to the left
   )
-?element_text
-p
+ p
+
  genesets <- c("Hallmark", "KEGG", "Reactome", "GO_BP", "GO_MF", "GO_CC")
  
  plot_list[[compare]] <- p
  n_set[[compare]] <- nrow(df)
+ n_char[[compare]] <- max(nchar(df$Description)) # number of characters of the gene set. Used it to determine plot width
+ 
  # ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], "_",vs[compare], ".pdf"), width=20, height=0.7* nrow(df), units="cm")
   }
   
  
   # custome heights
-  heights <- c(n_set[[1]]+5, n_set[[2]]+5, n_set[[3]]+3, n_set[[4]]+3)
+  heights <- c()
+  for (i in 1:length(n_set)){
+    if (n_set[[i]]<=5){
+      heights <- c(heights, n_set[[i]]+5)
+    } else {
+      heights <- c(heights, n_set[[i]]+3)
+    }
+  }
+  
+  #heights <- c(n_set[[1]]+5, n_set[[2]]+5, n_set[[3]]+3, n_set[[4]]+3)
   
   p <- cowplot::plot_grid(plot_list[[1]], plot_list[[2]], plot_list[[3]], plot_list[[4]],
                      align = "v", ncol = 1,
                      rel_heights = heights)
   p
-  ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], "_FDR", fdr_cutoff, ".pdf"), width=20, height=0.7*sum(heights), units="cm")
+  ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], "_FDR", fdr_cutoff, ".pdf"), width=max(unlist(n_char))*0.3+10, height=0.7*sum(heights), units="cm", limitsize = FALSE)
   
   p
-  ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], "_FDR", fdr_cutoff, ".svg"), width=20, height=0.7*sum(heights), units="cm")
+  ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], "_FDR", fdr_cutoff, ".svg"), width=max(unlist(n_char))*0.3+10, height=0.7*sum(heights), units="cm", limitsize = FALSE)
   
 }
+
+```
+
+```{r plot pathways no EIF2A}
+df1 <- read_excel("output/GSEA_p_EIF2A_proteomics_noEIF2A_DMSO.EIF2A_DMSO.ctrl.xlsx")
+df2 <- read_excel("output/GSEA_p_EIF2A_proteomics_noEIF2A_Tg.EIF2A_Tg.ctrl.xlsx")
+df3 <- read_excel("output/GSEA_p_EIF2A_proteomics_noEIF2A_Tg.ctrl_DMSO.ctrl.xlsx")
+df4 <- read_excel("output/GSEA_p_EIF2A_proteomics_noEIF2A_Tg.EIF2A_DMSO.EIF2A.xlsx")
+df <- df1
+colnames(df)
+
+for (i in 1:6){
+plot_pathway(
+  db=i,
+  fdr_cutoff=0.05
+)
+}
+
+plot_pathway <- function(db, fdr_cutoff){
+
+  group_levels = c("DMSO.ctrl", "DMSO.EIF2A", "Tg.ctrl", "Tg.EIF2A")
+
+  vs <- c(paste0(group_levels[2],"_",group_levels[1]),  
+        paste0(group_levels[4],"_",group_levels[3]),  
+        paste0(group_levels[3],"_",group_levels[1]), 
+        paste0(group_levels[4],"_",group_levels[2]))
+  
+  plot_list <- list()
+  n_set <- list()
+  n_char <- list()
+  
+  
+  for (compare in 1:4){
+    
+  df <- read_excel(paste0("output/GSEA_p_EIF2A_proteomics_noEIF2A_", vs[compare],".xlsx"), sheet = db) 
+  # Split strings by "/"
+  df$split_strings <- strsplit(df$core_enrichment, "/")
+
+# Count the number of strings
+  df$Gene_number <- sapply(df$split_strings, length)
+
+  df <- dplyr::select(df, -split_strings)
+
+  df$Gene_ratio <- df$Gene_number/df$setSize
+  
+  df <- df %>% filter(qvalue < fdr_cutoff) %>%
+    mutate(comparison = gsub("_"," vs ",vs[compare]))
+  
+  #df$Description <- factor(df$Description, levels = df$Description)
+
+p <- ggplot(df,
+            aes(x=sign(NES)*(-log10(qvalue)), y = fct_reorder(Description,  sign(NES)*(-log10(qvalue))))) + 
+  geom_point(aes(size = Gene_ratio,
+                 colour = NES)) +
+  
+  #theme_minimal()+
+  
+  theme_bw(base_size = 14) +
+  scale_color_gradient2(#limits=c(0,5), 
+    midpoint = 0, 
+    low = "blue4",
+    mid= "white",
+    high = "red4", 
+    space = "Lab" )+
+  ylab(NULL)+
+  xlab("-log10(FDR)")+
+  theme(#axis.ticks.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x  = element_blank(),
+    panel.grid.minor.x  = element_blank(),
+        axis.text.y = element_text(colour = "black",size=14),
+        axis.text.x = element_text(colour = "black",size=12),
+        legend.title = element_text(color = "black", size = 12),
+    aspect.ratio = nrow(df)/8)+
+  labs(color = "NES",size="Gene ratio") +
+  #  facet_grid(. ~ library) +
+  #coord_cartesian(clip = "off") +
+  theme(strip.background =element_rect(fill="white") )+
+  theme(strip.text = element_text(colour = 'black')) +
+  labs(title = gsub("_"," vs ",vs[compare]),
+        #subtitle = "",
+        #caption = ""
+       )+
+  theme(
+    plot.title = element_text( size = 14, colour = "grey30", hjust = 1),    # Center title position and size
+    #plot.subtitle = element_text(hjust = 0.5),            # Center subtitle
+    #plot.caption = element_text(hjust = 0, face = "italic")# move caption to the left
+  )
+ p
+
+ genesets <- c("Hallmark", "KEGG", "Reactome", "GO_BP", "GO_MF", "GO_CC")
+ 
+ plot_list[[compare]] <- p
+ n_set[[compare]] <- nrow(df)
+ n_char[[compare]] <- max(nchar(df$Description)) # number of characters of the gene set. Used it to determine plot width
+ 
+ # ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], "_",vs[compare], ".pdf"), width=20, height=0.7* nrow(df), units="cm")
+  }
+  
+ 
+  # custome heights
+  heights <- c()
+  for (i in 1:length(n_set)){
+    if (n_set[[i]]<=5){
+      heights <- c(heights, n_set[[i]]+5)
+    } else {
+      heights <- c(heights, n_set[[i]]+3)
+    }
+  }
+  
+  #heights <- c(n_set[[1]]+5, n_set[[2]]+5, n_set[[3]]+3, n_set[[4]]+3)
+  
+  p <- cowplot::plot_grid(plot_list[[1]], plot_list[[2]], plot_list[[3]], plot_list[[4]],
+                     align = "v", ncol = 1,
+                     rel_heights = heights)
+  p
+  ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics_noEIF2A_", genesets[db], "_FDR", fdr_cutoff, ".pdf"), width=max(unlist(n_char))*0.3+10, height=0.7*sum(heights), units="cm", limitsize = FALSE)
+  
+  p
+  ggsave(filename=paste0("figures/GSEA_EIF2A_proteomics__noEIF2A_", genesets[db], "_FDR", fdr_cutoff, ".svg"), width=max(unlist(n_char))*0.3+10, height=0.7*sum(heights), units="cm", limitsize = FALSE)
+  
+}
+
 ```
 
  pdf(file = paste0("figures/GSEA_EIF2A_proteomics_", genesets[db], ".pdf"),

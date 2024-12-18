@@ -1,0 +1,498 @@
+---
+title: "EIF2A_proteomics"
+author: "Howard Cen"
+date: "2023-10-12"
+output: html_document
+---
+
+```{r libraries}
+# Install most recent version of ComplexHeatmap from Github
+#install.packages("devtools") 
+#library(devtools)
+#install_github("jokergoo/ComplexHeatmap")
+#install.packages("gridtext")
+#install.packages("scales")
+
+
+library(tidyverse) # for data wrangling and more
+#library(readxl) # for reading excel file
+library(ComplexHeatmap)
+library(circlize) # installed with ComplexHeatmap, but need to load it
+library(gridtext) # needed for complex heatmap
+library(scales) # for calculating z-scores etc
+
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) ##Set working directory
+
+#dir.create("input")
+#dir.create("output")
+#dir.create("figures")
+
+```
+
+
+
+
+```{r heatmap}
+
+library(RColorBrewer) 
+
+df <- read.csv(file = "output/EIF2A_proteomics_annotated.csv")
+View(df)
+
+de <- df %>% filter(Welch.s.T.test.p.value.DMSO_OE_DMSO<0.005 |
+                      Welch.s.T.test.p.value.TG_OE_TG<0.005 |
+                      Welch.s.T.test.p.value.TG_DMSO<0.005 |
+                      Welch.s.T.test.p.value.TG_OE_DMSO_OE<0.005)
+
+de <- df %>% filter(Welch.s.T.test.p.value.DMSO_OE_DMSO<0.005 |
+                      Welch.s.T.test.p.value.TG_OE_TG<0.005 )
+
+
+de <- df %>% filter(Welch.s.T.test.q.value.TG_DMSO<0.05 |
+                      Welch.s.T.test.q.value.TG_OE_DMSO_OE<0.05 )
+
+
+de <- df %>% filter(Welch.s.T.test.p.value.TG_DMSO<0.005 |
+                      Welch.s.T.test.p.value.TG_OE_TG<0.005)
+
+de <- df %>% filter(Welch.s.T.test.p.value.TG_DMSO<0.005 |
+                      Welch.s.T.test.p.value.TG_OE_DMSO_OE<0.005)
+dim(de)
+View(de)
+
+m <- df[,4:15] 
+rownames(m) <- df$Genes # set gene names as row names of m
+
+m <- de[,4:15] # select certain columns or rows by df[rows,columns]
+View(m)
+rownames(m) <- de$Genes # set gene names as row names of m
+
+m.z <- t(scale(t(m))) # scale -- calculate Z-score for columns: [(x-mean)/SD]; t -- transpose the matrix; log2 -- log2 transform the data
+colnames(m.z)
+max(m.z)
+min(m.z)
+View(m.z)
+
+#rownames(m.z) <- rownames(m) # set gene names as rownames of m.z
+
+# plot heatmap  --------------
+# (originally established by Yi Han Xia)
+
+number_of_dc <- length(grep("DMSO.ctrl", colnames(m.z))) # grep() -- find the position/index of, in this case, column names that contain the pattern "DN"
+number_of_de <- length(grep("DMSO.EIF2A", colnames(m.z))) # length() -- get the length of things
+number_of_tc <- length(grep("Tg.ctrl", colnames(m.z)))
+number_of_te <- length(grep("Tg.EIF2A", colnames(m.z)))
+
+number_of_dc
+number_of_te
+
+end_index_dc <- grep("DMSO.ctrl", colnames(m.z))[number_of_dc] # get the end position/index of each group
+end_index_de <- grep("DMSO.EIF2A", colnames(m.z))[number_of_de]
+end_index_tc <- grep("Tg.ctrl", colnames(m.z))[number_of_tc]
+end_index_te <- grep("Tg.EIF2A", colnames(m.z))[number_of_te]
+
+end_index_dc
+end_index_te
+#set.seed(12) # run this to get the same k-means clusters 
+cbPalette <- c("#E69F00", #lightorange
+               
+                "#56B4E9", #blue
+               "#009E73", #green
+               
+                "#CC79A7", #magenta
+               "#D55E00", #darkorange
+               "#999999", #grey
+                
+                
+                "#0072B2", #darkblue
+                "#CC79A7", #magenta
+                
+                "#F0E442" #yellow
+               )
+
+
+# heatmap for DMSO_EIF2A vs DMSO or Tg_EIF2A vs Tg                
+heatmap <- Heatmap(m.z,
+                   show_row_names = TRUE,
+                   show_column_names = FALSE,
+                   show_row_dend = TRUE,
+                   show_column_dend = FALSE,
+                   
+                   clustering_distance_rows = "euclidean",
+                   clustering_method_rows = "ward.D2", # default linkage method is "complete"
+                   
+                   row_dend_side = "left",
+                   row_dend_width = unit(15, "mm"),
+                   
+                   column_names_side = "top",
+                   column_dend_side = "bottom",
+                   
+                   row_labels = gt_render(rownames(m.z)), ### now we set row names (genes) as labels
+                   row_names_gp = gpar(fontsize = 10),
+                  
+                   col = colorRamp2(c(-3,0,3), c("blue", "white", "red")), # set the color range from Z-score -3 to 3 (saturate the outliers,  if you didn't remove them).
+                   #col = colorRamp2(c(min(na.omit(m.z)),0,max(na.omit(m.z))), c("blue", "white", "red")), # alternatively, set the range from min to max value
+                   
+                   column_order = 1:ncol(m.z),
+                   
+                   height = unit(220, "mm"), # set the height of heatmap
+                   width = ncol(m.z)*unit(8, "mm"), # set the column width
+                   
+                   top_annotation = columnAnnotation(empty = anno_empty(border = FALSE, 
+                                                                        height = unit(6, "mm"))), # leave an empty space on top for the condition labels below.
+                   
+                   right_annotation = 
+                           rowAnnotation(`DMSO_EIF2A vs DMSO` = de$sig_DMSO_EIF2A.ctrl,
+                                         `Tg_EIF2A vs Tg` = de$sig_Tg_EIF2A.ctrl,
+                                         
+                                         
+                                         col = list(`DMSO_EIF2A vs DMSO` = c("TRUE" = cbPalette[1]),
+                                                    `Tg_EIF2A vs Tg` = c("TRUE" = cbPalette[2])
+                                         )
+                                         ,
+                                         annotation_legend_param = list(
+                      
+                                           `DMSO_EIF2A vs DMSO` = list(
+                                             title = c(""),
+                                             labels = "DMSO_EIF2A vs DMSO"#expression(italic("Ins1")^italic("+/+")*" Sucrose vs Water") #expression() issue - https://github.com/jokergoo/ComplexHeatmap/issues/678
+                                           ),
+                      
+                                           `Tg_EIF2A vs Tg` = list(
+                                             title = c(""),
+                                             labels = "Tg_EIF2A vs Tg"
+                                           )
+                                         ),
+                                         show_annotation_name = FALSE,
+                                         show_legend=TRUE,
+                                         na_col = "white",
+                                         width = unit(8, "mm")
+                      
+                           ),
+
+                   
+                   
+                   border_gp = gpar(col = "black"), # set border color
+                   
+                   show_heatmap_legend = TRUE,
+                   heatmap_legend_param = list(
+                     title = "Row z-score",
+                     title_position = "topleft",
+                     #at = c(-3, -2, -1, 0, 1, 2, 3), # set ticks/numbers of legend
+                     legend_height = unit(4, "cm")),
+                   
+                   #split = 4, # split the heatmap into separate blocks by hierarchical clustering
+                   #row_km = 4, # or split the heatmap into separate blocks by k-means clustering
+                   ## determine the number of clusters: https://www.datanovia.com/en/lessons/determining-the-optimal-number-of-clusters-3-must-know-methods/
+                   
+                  layer_fun = function(j, i, x, y, width, height, fill) {
+                     mat = restore_matrix(j, i, x, y)
+                     
+                     ind = unique(c(mat[, c(end_index_dc,
+                                            end_index_de,
+                                            end_index_tc
+                                            ) # enter the number where you want a gap between columns
+                                        ])) 
+                     
+                     grid.rect(x = x[ind] + unit(0.5/ncol(m.z), "npc"), 
+                               y = y[ind], 
+                               width = unit(0.03, "inches"), # width of the gap
+                               height = unit(1/nrow(m.z), "npc"),
+                               gp = gpar(col = "white", fill = "white") # color of the gap
+                     )
+                   }
+                   ) 
+
+draw(heatmap)
+
+
+
+
+
+# heatmap for Tg_EIF2A vs Tg or Tg vs DMSO              
+heatmap <- Heatmap(m.z,
+                   show_row_names = TRUE,
+                   show_column_names = FALSE,
+                   show_row_dend = TRUE,
+                   show_column_dend = FALSE,
+                   
+                   clustering_distance_rows = "euclidean",
+                   clustering_method_rows = "ward.D2", # default linkage method is "complete"
+                   
+                   row_dend_side = "left",
+                   row_dend_width = unit(15, "mm"),
+                   
+                   column_names_side = "top",
+                   column_dend_side = "bottom",
+                   
+                   row_labels = gt_render(rownames(m.z)), ### now we set row names (genes) as labels
+                   row_names_gp = gpar(fontsize = 10),
+                  
+                   col = colorRamp2(c(-3,0,3), c("blue", "white", "red")), # set the color range from Z-score -3 to 3 (saturate the outliers,  if you didn't remove them).
+                   #col = colorRamp2(c(min(na.omit(m.z)),0,max(na.omit(m.z))), c("blue", "white", "red")), # alternatively, set the range from min to max value
+                   
+                   column_order = 1:ncol(m.z),
+                   
+                   height = unit(300, "mm"), # set the height of heatmap
+                   width = ncol(m.z)*unit(8, "mm"), # set the column width
+                   
+                   top_annotation = columnAnnotation(empty = anno_empty(border = FALSE, 
+                                                                        height = unit(6, "mm"))), # leave an empty space on top for the condition labels below.
+                   
+                   right_annotation = 
+                           rowAnnotation(`Tg vs DMSO` = de$sig_Tg.DMSO_ctrl,
+                                         `Tg_EIF2A vs Tg` = de$sig_Tg_EIF2A.ctrl,
+                                         
+                                         
+                                         col = list(`Tg vs DMSO` = c("TRUE" = cbPalette[3]),
+                                                    `Tg_EIF2A vs Tg` = c("TRUE" = cbPalette[2])
+                                         )
+                                         ,
+                                         annotation_legend_param = list(
+                      
+                                           `Tg vs DMSO` = list(
+                                             title = c(""),
+                                             labels = "Tg vs DMSO"#expression(italic("Ins1")^italic("+/+")*" Sucrose vs Water") #expression() issue - https://github.com/jokergoo/ComplexHeatmap/issues/678
+                                           ),
+                      
+                                           `Tg_EIF2A vs Tg` = list(
+                                             title = c(""),
+                                             labels = "Tg_EIF2A vs Tg"
+                                           )
+                                         ),
+                                         show_annotation_name = FALSE,
+                                         show_legend=TRUE,
+                                         na_col = "white",
+                                         width = unit(8, "mm")
+                      
+                           ),
+
+                   
+                   
+                   border_gp = gpar(col = "black"), # set border color
+                   
+                   show_heatmap_legend = TRUE,
+                   heatmap_legend_param = list(
+                     title = "Row z-score",
+                     title_position = "topleft",
+                     #at = c(-3, -2, -1, 0, 1, 2, 3), # set ticks/numbers of legend
+                     legend_height = unit(4, "cm")),
+                   
+                   #split = 4, # split the heatmap into separate blocks by hierarchical clustering
+                   #row_km = 4, # or split the heatmap into separate blocks by k-means clustering
+                   ## determine the number of clusters: https://www.datanovia.com/en/lessons/determining-the-optimal-number-of-clusters-3-must-know-methods/
+                   
+                  layer_fun = function(j, i, x, y, width, height, fill) {
+                     mat = restore_matrix(j, i, x, y)
+                     
+                     ind = unique(c(mat[, c(end_index_dc,
+                                            end_index_de,
+                                            end_index_tc
+                                            ) # enter the number where you want a gap between columns
+                                        ])) 
+                     
+                     grid.rect(x = x[ind] + unit(0.5/ncol(m.z), "npc"), 
+                               y = y[ind], 
+                               width = unit(0.03, "inches"), # width of the gap
+                               height = unit(1/nrow(m.z), "npc"),
+                               gp = gpar(col = "white", fill = "white") # color of the gap
+                     )
+                   }
+                   ) 
+
+draw(heatmap)
+
+
+
+
+
+# heatmap for Tg_EIF2A vs DMSO_EIF2A or Tg vs DMSO              
+heatmap <- Heatmap(m.z,
+                   show_row_names = TRUE,
+                   show_column_names = FALSE,
+                   show_row_dend = TRUE,
+                   show_column_dend = FALSE,
+                   
+                   clustering_distance_rows = "euclidean",
+                   clustering_method_rows = "ward.D2", # default linkage method is "complete"
+                   
+                   row_dend_side = "left",
+                   row_dend_width = unit(15, "mm"),
+                   
+                   column_names_side = "top",
+                   column_dend_side = "bottom",
+                   
+                   row_labels = gt_render(rownames(m.z)), ### now we set row names (genes) as labels
+                   row_names_gp = gpar(fontsize = 10),
+                  
+                   col = colorRamp2(c(-3,0,3), c("blue", "white", "red")), # set the color range from Z-score -3 to 3 (saturate the outliers,  if you didn't remove them).
+                   #col = colorRamp2(c(min(na.omit(m.z)),0,max(na.omit(m.z))), c("blue", "white", "red")), # alternatively, set the range from min to max value
+                   
+                   column_order = 1:ncol(m.z),
+                   
+                   height = unit(600, "mm"), # set the height of heatmap
+                   width = ncol(m.z)*unit(8, "mm"), # set the column width
+                   
+                   top_annotation = columnAnnotation(empty = anno_empty(border = FALSE, 
+                                                                        height = unit(6, "mm"))), # leave an empty space on top for the condition labels below.
+                   
+                   right_annotation = 
+                           rowAnnotation(`Tg vs DMSO` = de$sig_Tg.DMSO_ctrl,
+                                         `Tg_EIF2A vs DMSO_EIF2A` = de$sig_Tg.DMSO_EIF2A,
+                                         
+                                         
+                                         col = list(`Tg vs DMSO` = c("TRUE" = cbPalette[3]),
+                                                    `Tg_EIF2A vs DMSO_EIF2A` = c("TRUE" = cbPalette[4])
+                                         )
+                                         ,
+                                         annotation_legend_param = list(
+                      
+                                           `Tg vs DMSO` = list(
+                                             title = c(""),
+                                             labels = "Tg vs DMSO"#expression(italic("Ins1")^italic("+/+")*" Sucrose vs Water") #expression() issue - https://github.com/jokergoo/ComplexHeatmap/issues/678
+                                           ),
+                      
+                                           `Tg_EIF2A vs DMSO_EIF2A` = list(
+                                             title = c(""),
+                                             labels = "Tg_EIF2A vs DMSO_EIF2A"
+                                           )
+                                         ),
+                                         show_annotation_name = FALSE,
+                                         show_legend=TRUE,
+                                         na_col = "white",
+                                         width = unit(8, "mm")
+                      
+                           ),
+
+                   
+                   
+                   border_gp = gpar(col = "black"), # set border color
+                   
+                   show_heatmap_legend = TRUE,
+                   heatmap_legend_param = list(
+                     title = "Row z-score",
+                     title_position = "topleft",
+                     #at = c(-3, -2, -1, 0, 1, 2, 3), # set ticks/numbers of legend
+                     legend_height = unit(4, "cm")),
+                   
+                   #split = 4, # split the heatmap into separate blocks by hierarchical clustering
+                   #row_km = 4, # or split the heatmap into separate blocks by k-means clustering
+                   ## determine the number of clusters: https://www.datanovia.com/en/lessons/determining-the-optimal-number-of-clusters-3-must-know-methods/
+                   
+                  layer_fun = function(j, i, x, y, width, height, fill) {
+                     mat = restore_matrix(j, i, x, y)
+                     
+                     ind = unique(c(mat[, c(end_index_dc,
+                                            end_index_de,
+                                            end_index_tc
+                                            ) # enter the number where you want a gap between columns
+                                        ])) 
+                     
+                     grid.rect(x = x[ind] + unit(0.5/ncol(m.z), "npc"), 
+                               y = y[ind], 
+                               width = unit(0.03, "inches"), # width of the gap
+                               height = unit(1/nrow(m.z), "npc"),
+                               gp = gpar(col = "white", fill = "white") # color of the gap
+                     )
+                   }
+                   ) 
+
+draw(heatmap)
+```
+# save and label heatmap ---------------
+
+#step 1 - save a pdf file
+pdf(file = 'figures/heatmap_EIF2A_proteomics_DE.pdf',
+    width = 8, 
+    height = 10)
+    
+pdf(file = 'figures/heatmap_EIF2A_proteomics_DE_reverse.pdf',
+    width = 8, 
+    height = 13)
+    
+pdf(file = 'figures/heatmap_EIF2A_proteomics_DE_oe.pdf',
+    width = 8, 
+    height = 24)
+
+#step 2 - draw heatmap in the saved file
+draw(heatmap)
+
+#step 3 - draw the labeling on the heatmap in the saved file
+
+# labeling heatmap
+#list_components() # get the viewport names
+seekViewport("annotation_empty_1") # seek the empty space we saved at the top of heatmap, called "annotation_empty_1"
+
+#Condition label 1
+
+## draw a text label
+grid.text("DMSO", 
+          x = (end_index_dc)/2/ncol(m.z), # location at the middle of DN
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11,
+                    col = "black"))
+
+#Condition label 2
+
+grid.text("DMSO_EIF2A", 
+          x = (end_index_dc + end_index_de)/2/ncol(m.z), # location at the middle of DH
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11))
+
+#Condition label 3
+
+
+grid.text("Tg", 
+          x = (end_index_de + end_index_tc)/2/ncol(m.z),
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11))
+
+#Condition label 4
+
+
+grid.text("Tg_EIF2A", 
+          x = (end_index_tc + end_index_te)/2/ncol(m.z),
+          y = 0.5,
+          just = c("center", "center"),
+          gp = gpar(fontsize = 11))
+
+
+dev.off()
+
+## Top label vertical gaps
+grid.rect(x = end_index_DN/ncol(m.z),
+          y = 0,
+          height = 1,
+          width = unit(0.03, "inches"), # same width as the width of gaps in heatmap
+          just = c("center", "bottom"),
+          gp = gpar(fill = "white", 
+                    col = "white", 
+                    lwd = 1
+          ))
+grid.rect(x = end_index_DH/ncol(m.z),
+          y = 0,
+          height = 1,
+          width = unit(0.03, "inches"),
+          just = c("center", "bottom"),
+          gp = gpar(fill = "white", 
+                    col = "white", 
+                    lwd = 1
+          ))
+grid.rect(x = end_index_IN/ncol(m.z),
+          y = 0,
+          height = 1,
+          width = unit(0.03, "inches"),
+          just = c("center", "bottom"),
+          gp = gpar(fill = "white", 
+                    col = "white", 
+                    lwd = 1
+          ))
+
+# step 4 - close the plotting device (the saved file)
+dev.off()
+
+
+```
